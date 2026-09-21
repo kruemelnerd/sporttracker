@@ -85,12 +85,47 @@ Updated during roadmap creation. Each v1 requirement must map to exactly one pha
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| Pending roadmap mapping | Pending | Pending |
+| IMPT-01 | Phase 2 - Reliable Import | Planned |
+| IMPT-02 | Phase 2 - Reliable Import | Planned |
+| IMPT-03 | Phase 2 - Reliable Import | Planned |
+| IMPT-04 | Phase 2 - Reliable Import | Planned |
+| IMPT-05 | Phase 2 - Reliable Import | Planned |
+| IMPT-06 | Phase 2 - Reliable Import | Planned |
+| IMPT-07 | Phase 2 - Reliable Import | Planned |
+| IMPT-08 | Phase 2 - Reliable Import | Planned |
+| DATA-01 | Phase 2 - Reliable Import | Planned |
+| DATA-02 | Phase 2 - Reliable Import | Planned |
+| DATA-03 | Phase 2 - Reliable Import | Planned |
+| DATA-04 | Phase 2 - Reliable Import | Planned |
+| DATA-05 | Phase 2 - Reliable Import | Planned |
+| DATA-06 | Phase 2 - Reliable Import | Planned |
+| DATA-07 | Phase 2 - Reliable Import | Planned |
+| DASH-01 | Phase 3 - Six-Week Dashboard | Planned |
+| DASH-02 | Phase 3 - Six-Week Dashboard | Planned |
+| DASH-03 | Phase 3 - Six-Week Dashboard | Planned |
+| DASH-04 | Phase 3 - Six-Week Dashboard | Planned |
+| DASH-05 | Phase 3 - Six-Week Dashboard | Planned |
+| DASH-06 | Phase 3 - Six-Week Dashboard | Planned |
+| DASH-07 | Phase 3 - Six-Week Dashboard | Planned |
+| DASH-08 | Phase 3 - Six-Week Dashboard | Planned |
+| DASH-09 | Phase 3 - Six-Week Dashboard | Planned |
+| DETL-01 | Phase 4 - Resilient Activity Detail | Planned |
+| DETL-02 | Phase 4 - Resilient Activity Detail | Planned |
+| DETL-03 | Phase 5 - Map, Charts, and Hardening | Planned |
+| DETL-04 | Phase 4 - Resilient Activity Detail | Planned |
+| DETL-05 | Phase 5 - Map, Charts, and Hardening | Planned |
+| DETL-06 | Phase 4 - Resilient Activity Detail | Planned |
+| DETL-07 | Phase 4 - Resilient Activity Detail | Planned |
+| QUAL-01 | Phase 1 - Foundation and One Real FIT | Planned |
+| QUAL-02 | Phase 2 - Reliable Import | Planned |
+| QUAL-03 | Phase 5 - Map, Charts, and Hardening | Planned |
 
 **Coverage:**
 - v1 requirements: 34 total
-- Mapped to phases: 0
-- Unmapped: 34
+- Mapped to phases: 34
+- Unmapped: 0
+- Mapped more than once: 0
+- Phase counts: Phase 1 = 1, Phase 2 = 16, Phase 3 = 9, Phase 4 = 5, Phase 5 = 3
 
 ---
 *Requirements defined: 2026-09-21*
