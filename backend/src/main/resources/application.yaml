@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: running-dashboard-backend
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/running_dashboard}
+    username: ${DATABASE_USERNAME:running_dashboard}
+    password: ${DATABASE_PASSWORD:running_dashboard}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  servlet:
+    multipart:
+      max-file-size: ${IMPORT_MAX_FILE_SIZE:10MB}
+      max-request-size: ${IMPORT_MAX_REQUEST_SIZE:100MB}
+
+server:
+  port: ${SERVER_PORT:8080}
+
+running-dashboard:
+  display-timezone: ${DISPLAY_TIMEZONE:Europe/Berlin}
+  data-directory: ${DATA_DIRECTORY:./data}
