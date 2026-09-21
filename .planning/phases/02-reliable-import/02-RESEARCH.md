@@ -367,20 +367,11 @@ Security enforcement is enabled at ASVS level 1 in `.planning/config.json`. [VER
 | A2 | No authentication/session controls are needed in this local single-user MVP. | Security | Exposing the service beyond localhost would require access control and threat review. |
 | A3 | A post-commit filesystem finalization failure can be represented by a recoverable operational state without adding a queue. | Transaction pattern | Database metadata/original-file consistency needs a recovery task if the failure is observed. |
 
-## Open Questions
+## Resolved Research Decisions
 
-1. **Exact default file-size, batch-count, and processing-time limits**
-   - What we know: limits must be conservative, configurable, documented, and testable. [VERIFIED: 02-CONTEXT.md:28-32] Quote: `Exact default values ... provided they are conservative, documented, and testable.`
-   - What's unclear: user hardware and expected Garmin export sizes.
-   - Recommendation: choose small explicit defaults in configuration, expose them in error messages, and keep the constants test-covered; revisit after representative fixtures.
-2. **Garmin SDK behavior for multiple sessions/candidates and truncated files**
-   - What we know: Phase 2 must not partially import multi-candidate files; official FIT decoding/validation concepts exist. [CITED: https://developer.garmin.com/fit/cookbook/decoding-activity-files/]
-   - What's unclear: exact Java 21.171.0 listener/error behavior for every malformed fixture.
-   - Recommendation: make fixture tests the source of truth and classify any ambiguous candidate set as invalid/failed rather than guessing.
-3. **Post-commit original-file failure policy**
-   - What we know: original retention is only after successful import. [VERIFIED: 02-CONTEXT.md:23-24] Quote: `only after a successful import`.
-   - What's unclear: whether an operational retry state is needed if the DB commit succeeds but the final move fails.
-   - Recommendation: implement atomic hash-path finalization and a deterministic recovery/check command only if the failure can be reproduced; do not hide it as a parser failure.
+1. **Upload and processing bounds — resolved.** Configure a maximum of 10 files per batch, 10 MiB per file, and 100 MiB per HTTP request. The synchronous Garmin decode has no separate wall-clock cancellation mechanism in this phase; its bounded input is the 10 MiB file limit and any decode exception produces that file's terminal `INVALID` or `FAILED` outcome. The controller returns a typed batch error with `BATCH_COUNT_EXCEEDED` for more than 10 submitted files and `REQUEST_TOO_LARGE` for servlet multipart rejection; neither path begins decoding. These defaults are conservative, configuration-overridable, documented, and test-covered per D-06.
+2. **Multi-session, candidate, and truncated FIT handling — resolved.** The adapter collects all relevant messages, then accepts exactly one running candidate/session. Zero candidates, more than one candidate/session, a decoder exception, or an incomplete/invalid decoded aggregate returns an actionable `INVALID` outcome; it writes neither Activity/Record/Lap rows nor a durable original. This deterministic classifier applies regardless of the SDK's particular listener/error sequence and implements D-03 and D-08.
+3. **Post-commit original-file finalization — resolved.** Commit normalized rows and import metadata without a durable original path, then atomically move the controlled temporary file to its SHA-256-derived path. Only after a successful move may a separate metadata update record that path. A move failure deletes the temporary file, leaves the normalized imported aggregate valid, returns `IMPORTED` with `originalRetained: false` and a safe operational message, and leaves no metadata path to a missing file. A repeat of the same hash treats an already-present target as idempotent. This preserves D-05: raw bytes become durable only after a successful import and never enter PostgreSQL.
 
 ## Sources
 
