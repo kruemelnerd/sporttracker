@@ -32,6 +32,7 @@
 
 **Goal:** Mehrere FIT-Dateien pro Batch sicher verarbeiten und Laufdaten inklusive optionaler Felder dauerhaft, korrekt und lokal speichern.
 **Mode:** mvp
+**Plans:** 3 plans
 
 **Delivers:** Picker-/Drag-and-drop-Upload, per-Datei-Status und Retry, Größen-/Anzahlgrenzen, isolierte Transaktionen, Originaldateiablage, SHA-256- und Aktivitäts-Duplikaterkennung, Nicht-Lauf-Klassifikation sowie Activity-, Record- und Lap-Persistenz.
 
@@ -43,6 +44,11 @@
 - Backend-Automation deckt erfolgreichen Import, Kernwerte, Records, GPS, Laps, fehlende Sensoren, Duplikate, beschädigte Dateien und Nicht-Läufe ab.
 
 **Requirements:** IMPT-01, IMPT-02, IMPT-03, IMPT-04, IMPT-05, IMPT-06, IMPT-07, IMPT-08, DATA-01, DATA-02, DATA-03, DATA-04, DATA-05, DATA-06, DATA-07, QUAL-02
+
+Plans:
+- [ ] 02-01-PLAN.md — Prove one running FIT import end to end with normalized persistence.
+- [ ] 02-02-PLAN.md — Add bounded per-file isolation, duplicate/non-run classification, and backend fixture coverage.
+- [ ] 02-03-PLAN.md — Deliver multi-file drag/drop outcomes and selected-file retry in the browser.
 
 ## Phase 3: Six-Week Dashboard
 
