@@ -99,6 +99,28 @@ class ImportControllerTests {
                 .andExpect(jsonPath("$.outcomes[0].status").value("DUPLICATE"));
     }
 
+    @Test
+    void rejectsAnOversizedBatchBeforeDecodingAnyFile() throws Exception {
+        var request = multipart("/api/imports");
+        for (int index = 0; index < 11; index++) {
+            request.file(new MockMultipartFile("files", "activity-" + index + ".fit", "application/octet-stream", new byte[] {1}));
+        }
+
+        mockMvc.perform(request)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.outcomes").isEmpty())
+                .andExpect(jsonPath("$.batchError.code").value("BATCH_COUNT_EXCEEDED"));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM import_file WHERE sha256 <> ?", Integer.class, FIXTURE_HASH));
+    }
+
+    @Test
+    void rejectsAnEmptyFileWithoutPersistingAnything() throws Exception {
+        mockMvc.perform(multipart("/api/imports").file(new MockMultipartFile("files", "empty.fit", "application/octet-stream", new byte[0])))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.outcomes[0].status").value("INVALID"))
+                .andExpect(jsonPath("$.outcomes[0].code").value("EMPTY_FILE"));
+    }
+
     private byte[] fixtureBytes() throws Exception {
         try (InputStream input = new ClassPathResource("fit/20053968686_ACTIVITY.fit").getInputStream()) {
             return input.readAllBytes();
