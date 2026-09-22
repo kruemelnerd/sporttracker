@@ -1,6 +1,7 @@
 package local.runningdashboard;
 
 import java.util.List;
+import org.springframework.util.MultiValueMap;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,9 +17,14 @@ public class ImportController {
     public ImportController(ImportService imports) { this.imports = imports; }
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ImportResponse importFile(@RequestParam("file") MultipartFile file) {
-        return new ImportResponse(List.of(imports.importFile(file)));
+    public ImportResponse importFiles(@RequestParam MultiValueMap<String, MultipartFile> parts) {
+        List<MultipartFile> files = parts.get("files");
+        if (files == null) files = parts.getOrDefault("file", List.of()); // backwards-compatible tracer field name
+        ImportService.ImportBatch batch = imports.importFiles(files);
+        BatchError error = batch.batchError() == null ? null : new BatchError(batch.batchError().code(), batch.batchError().message());
+        return new ImportResponse(batch.outcomes(), error);
     }
 
-    public record ImportResponse(List<ImportService.ImportOutcome> outcomes) { }
+    public record ImportResponse(List<ImportService.ImportOutcome> outcomes, BatchError batchError) { }
+    public record BatchError(String code, String message) { }
 }

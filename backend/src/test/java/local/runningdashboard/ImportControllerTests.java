@@ -3,6 +3,7 @@ package local.runningdashboard;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -69,5 +70,38 @@ class ImportControllerTests {
         assertEquals(10.34802851267159d, GarminFitFixtureAdapter.degrees(123456789, true));
         assertNull(GarminFitFixtureAdapter.degrees(1073741825, true));
         assertEquals(0d, GarminFitFixtureAdapter.degrees(0, true));
+    }
+
+    @Test
+    void returnsIndependentOutcomesForAnImportedAndMalformedFile() throws Exception {
+        removeFixtureAggregate();
+
+        mockMvc.perform(multipart("/api/imports")
+                        .file(new MockMultipartFile("files", "activity.fit", "application/octet-stream", fixtureBytes()))
+                        .file(new MockMultipartFile("files", "broken.fit", "application/octet-stream", new byte[] {1, 2, 3})))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.outcomes[0].status").value("IMPORTED"))
+                .andExpect(jsonPath("$.outcomes[1].status").value(org.hamcrest.Matchers.anyOf(org.hamcrest.Matchers.is("INVALID"), org.hamcrest.Matchers.is("FAILED"))));
+
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", Integer.class, FIXTURE_HASH));
+    }
+
+    @Test
+    void classifiesAnExactRetryAsDuplicate() throws Exception {
+        removeFixtureAggregate();
+        byte[] bytes = fixtureBytes();
+
+        mockMvc.perform(multipart("/api/imports").file(new MockMultipartFile("files", "activity.fit", "application/octet-stream", bytes)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.outcomes[0].status").value("IMPORTED"));
+        mockMvc.perform(multipart("/api/imports").file(new MockMultipartFile("files", "activity.fit", "application/octet-stream", bytes)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.outcomes[0].status").value("DUPLICATE"));
+    }
+
+    private byte[] fixtureBytes() throws Exception {
+        try (InputStream input = new ClassPathResource("fit/20053968686_ACTIVITY.fit").getInputStream()) {
+            return input.readAllBytes();
+        }
     }
 }

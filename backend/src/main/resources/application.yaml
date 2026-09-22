@@ -10,8 +10,8 @@ spring:
     locations: classpath:db/migration
   servlet:
     multipart:
-      max-file-size: ${IMPORT_MAX_FILE_SIZE:10MB}
-      max-request-size: ${IMPORT_MAX_REQUEST_SIZE:100MB}
+      max-file-size: ${IMPORT_MAX_FILE_BYTES:10485760}B
+      max-request-size: ${IMPORT_MAX_REQUEST_BYTES:104857600}B
 
 server:
   port: ${SERVER_PORT:8080}
@@ -19,3 +19,7 @@ server:
 running-dashboard:
   display-timezone: ${DISPLAY_TIMEZONE:Europe/Berlin}
   data-directory: ${DATA_DIRECTORY:./data}
+  import:
+    max-batch-count: ${IMPORT_MAX_BATCH_COUNT:10}
+    max-file-bytes: ${IMPORT_MAX_FILE_BYTES:10485760}
+    max-request-bytes: ${IMPORT_MAX_REQUEST_BYTES:104857600}
