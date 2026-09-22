@@ -1,6 +1,7 @@
 package local.runningdashboard;
 
 import java.io.IOException;
+import java.sql.Timestamp;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -50,12 +51,12 @@ public class ImportService {
 
     private Long persist(GarminFitFixtureAdapter.DecodedActivity decoded, String hash, long sizeBytes) {
         Long activityId = jdbc.queryForObject("INSERT INTO activity (sport, sub_sport, start_time, elapsed_seconds, moving_seconds, distance_meters, average_speed_mps, average_heart_rate, average_cadence, ascent_meters, calories) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-                Long.class, decoded.sport(), decoded.subSport(), decoded.startTime(), decoded.elapsedSeconds(), decoded.movingSeconds(), decoded.distanceMeters(), decoded.averageSpeedMetersPerSecond(), decoded.averageHeartRate(), decoded.averageCadence(), decoded.ascentMeters(), decoded.calories());
+                Long.class, decoded.sport(), decoded.subSport(), Timestamp.from(decoded.startTime()), decoded.elapsedSeconds(), decoded.movingSeconds(), decoded.distanceMeters(), decoded.averageSpeedMetersPerSecond(), decoded.averageHeartRate(), decoded.averageCadence(), decoded.ascentMeters(), decoded.calories());
         jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes) VALUES (?, ?, ?)", activityId, hash, sizeBytes);
         int index = 0;
         for (GarminFitFixtureAdapter.DecodedRecord record : decoded.records()) {
             jdbc.update("INSERT INTO activity_record (activity_id, record_index, record_time, elapsed_seconds, distance_meters, latitude, longitude, altitude_meters, speed_mps, heart_rate, cadence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    activityId, index++, record.timestamp(), record.elapsedSeconds(), record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence());
+                    activityId, index++, record.timestamp() == null ? null : Timestamp.from(record.timestamp()), record.elapsedSeconds(), record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence());
         }
         for (GarminFitFixtureAdapter.DecodedLap lap : decoded.laps()) {
             jdbc.update("INSERT INTO lap (activity_id, lap_number, duration_seconds, distance_meters, average_speed_mps, average_heart_rate, average_cadence, ascent_meters) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
