@@ -1,5 +1,5 @@
 {
-  "model_profile": "adaptive",
+  "model_profile": "budget",
   "commit_docs": true,
   "parallelization": true,
   "search_gitignored": false,
@@ -21,8 +21,8 @@
     "research": true,
     "plan_check": true,
     "verifier": true,
-    "nyquist_validation": false,
-    "auto_advance": true,
+    "nyquist_validation": true,
+    "auto_advance": false,
     "node_repair": true,
     "node_repair_budget": 2,
     "ui_phase": true,
@@ -32,8 +32,8 @@
     "human_verify_mode": "end-of-phase",
     "context_guard_mode": "warn",
     "text_mode": false,
-    "compact_content": false,
-    "research_before_questions": false,
+    "compact_content": true,
+    "research_before_questions": true,
     "discuss_mode": "discuss",
     "skip_discuss": false,
     "code_review": true,
@@ -48,7 +48,10 @@
     "security_enforcement": true,
     "security_asvs_level": 1,
     "security_block_on": "high",
-    "_auto_chain_active": true
+    "_auto_chain_active": true,
+    "tdd_mode": false,
+    "ui_review": true,
+    "use_worktrees": true
   },
   "ship": {
     "pr_body_sections": [
@@ -90,6 +93,56 @@
   },
   "mode": "yolo",
   "granularity": "coarse",
-  "quick_branch_template": null,
-  "resolve_model_ids": "omit"
+  "resolve_model_ids": "omit",
+  "intel": {
+    "enabled": true
+  },
+  "graphify": {
+    "enabled": true,
+    "auto_update": true
+  },
+  "runtime": "opencode",
+  "model_policy": {
+    "provider": "generic",
+    "high": "openai/gpt-5.6-terra",
+    "medium": "openai/gpt-5.6-luna",
+    "low": "openai/gpt-5.6-luna"
+  },
+  "models": {
+    "planning": "high",
+    "discuss": "high",
+    "research": "medium",
+    "execution": "medium",
+    "verification": "high",
+    "completion": "medium"
+  },
+  "model_overrides": {
+    "gsd-planner": "openai/gpt-5.6-terra",
+    "gsd-roadmapper": "openai/gpt-5.6-terra",
+    "gsd-phase-researcher": "openai/gpt-5.6-luna",
+    "gsd-project-researcher": "openai/gpt-5.6-luna",
+    "gsd-codebase-mapper": "openai/gpt-5.6-luna",
+    "gsd-research-synthesizer": "openai/gpt-5.6-luna",
+    "gsd-executor": "openai/gpt-5.6-luna",
+    "gsd-debugger": "openai/gpt-5.6-terra",
+    "gsd-plan-checker": "openai/gpt-5.6-terra",
+    "gsd-verifier": "openai/gpt-5.6-terra",
+    "gsd-integration-checker": "openai/gpt-5.6-terra",
+    "gsd-nyquist-auditor": "openai/gpt-5.6-terra"
+  },
+  "effort": {
+    "default": "medium",
+    "routing_tier_defaults": {
+      "light": "low",
+      "standard": "medium",
+      "heavy": "high"
+    },
+    "agent_overrides": {
+      "gsd-planner": "high",
+      "gsd-roadmapper": "high",
+      "gsd-plan-checker": "high",
+      "gsd-debugger": "high",
+      "gsd-verifier": "high"
+    }
+  }
 }

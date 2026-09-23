@@ -115,6 +115,11 @@ Running Dashboard ist eine lokale Webanwendung zur Verwaltung und Auswertung eig
 ## Conventions
 
 Conventions not yet established. Will populate as patterns emerge during development.
+
+### Integrationsvalidierung
+
+- Nach jeder größeren Integration prüfen, ob die Anwendung weiterhin baut und die Tests erfolgreich laufen.
+- Falls der vollständige Build oder die Tests zu lange dauern, zunächst nur die relevanten Smoke-Tests ausführen.
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
