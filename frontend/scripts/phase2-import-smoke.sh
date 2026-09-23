@@ -19,6 +19,7 @@ docker compose -f "$root/compose.yaml" up -d db
 until docker compose -f "$root/compose.yaml" exec -T db pg_isready -U running_dashboard -d running_dashboard >/dev/null; do sleep 1; done
 (cd "$root/backend" && GRADLE_OPTS="${GRADLE_OPTS:+$GRADLE_OPTS }-Djdk.lang.Process.launchMechanism=VFORK" DATA_DIRECTORY="$root/.tmp-import-data" ./gradlew --no-daemon bootRun) >"$root/backend/import-smoke.log" 2>&1 & backend_pid=$!
 until curl --fail --silent http://127.0.0.1:8080/api/health >/dev/null; do sleep 1; done
+docker compose -f "$root/compose.yaml" exec -T db psql -U running_dashboard -d running_dashboard -c 'TRUNCATE activity, import_file, activity_record, lap RESTART IDENTITY CASCADE' >/dev/null
 (cd "$root/frontend" && npm run dev -- --host 127.0.0.1) >"$root/frontend/import-smoke.log" 2>&1 & frontend_pid=$!
 until curl --fail --silent http://127.0.0.1:5173/import >/dev/null; do sleep 1; done
 (cd "$root/frontend" && npx playwright test import-tracer.spec.ts)

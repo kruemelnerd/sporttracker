@@ -6,7 +6,7 @@ test('imports the committed running FIT fixture', async ({ page, request }) => {
   const fixture = path.resolve(import.meta.dirname, '../../../backend/src/test/resources/fit/20053968686_ACTIVITY.fit')
   await page.goto('/import')
   await page.getByTestId('fit-picker').setInputFiles(fixture)
-  await expect(page.getByTestId('import-outcome')).toContainText('IMPORTED')
+  await expect(page.getByTestId('import-row-20053968686_ACTIVITY.fit')).toContainText('IMPORTED')
   const response = await request.post('/api/imports', {
     multipart: { file: { name: 'activity.fit', mimeType: 'application/octet-stream', buffer: await readFile(fixture) } },
   })

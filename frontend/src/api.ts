@@ -12,13 +12,21 @@ export type FixtureSummary = {
 }
 
 export type ImportOutcome = {
-  status: 'IMPORTED' | 'DUPLICATE' | 'SKIPPED' | 'INVALID' | 'FAILED'
+  status: 'IMPORTED' | 'DUPLICATE' | 'SKIPPED_NON_RUN' | 'INVALID' | 'FAILED'
   activityId: number | null
   originalRetained: boolean
   code: string | null
 }
 
-export type ImportResponse = { outcomes: ImportOutcome[] }
+export type ImportBatchError = {
+  code: 'BATCH_COUNT_EXCEEDED' | 'REQUEST_TOO_LARGE'
+  message: string
+}
+
+export type ImportResponse = {
+  outcomes: ImportOutcome[]
+  batchError: ImportBatchError | null
+}
 
 export async function getHealth(): Promise<HealthResponse> {
   const response = await fetch('/api/health')
@@ -32,12 +40,10 @@ export async function getFixtureSummary(): Promise<FixtureSummary> {
   return response.json() as Promise<FixtureSummary>
 }
 
-export async function importFit(file: File): Promise<ImportOutcome> {
+export async function importFits(files: File[]): Promise<ImportResponse> {
   const form = new FormData()
-  form.append('file', file, file.name)
+  for (const file of files) form.append('files', file, file.name)
   const response = await fetch('/api/imports', { method: 'POST', body: form })
   if (!response.ok) throw new Error(`Import request failed: ${response.status}`)
-  const body = await response.json() as ImportResponse
-  if (body.outcomes.length !== 1) throw new Error('Import response did not contain one outcome')
-  return body.outcomes[0]
+  return response.json() as Promise<ImportResponse>
 }

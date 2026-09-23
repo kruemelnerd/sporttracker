@@ -12,6 +12,7 @@ async function selectFiles(wrapper: ReturnType<typeof mount>, files: File[]) {
   Object.defineProperty(picker.element, 'files', { value: files })
   await picker.trigger('change')
 }
+async function settle() { await flushPromises() }
 
 describe('ImportView', () => {
   beforeEach(() => importFits.mockReset())
@@ -27,7 +28,9 @@ describe('ImportView', () => {
 
     await selectFiles(wrapper, [picked])
     await wrapper.get('[data-testid="fit-drop-zone"]').trigger('drop', { dataTransfer: { files: [dropped] } })
-    await flushPromises()
+    await settle()
+
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="import-row-dropped.fit"]').text()).toContain('DUPLICATE'))
 
     expect(importFits).toHaveBeenCalledWith([picked])
     expect(importFits).toHaveBeenCalledWith([dropped])
@@ -42,7 +45,7 @@ describe('ImportView', () => {
     const wrapper = mount(ImportView)
 
     await selectFiles(wrapper, [file(`${status}.fit`)])
-    await flushPromises()
+    await settle()
 
     expect(wrapper.text()).toContain(status)
   })
@@ -52,7 +55,7 @@ describe('ImportView', () => {
     const wrapper = mount(ImportView)
 
     await selectFiles(wrapper, [file('run.fit')])
-    await flushPromises()
+    await settle()
 
     expect(wrapper.get('[data-testid="batch-error"]').text()).toContain('Select at most 10 files')
     expect(wrapper.get('[data-testid="import-row-run.fit"]').text()).toContain('PENDING')
@@ -67,9 +70,10 @@ describe('ImportView', () => {
     const bad = file('bad.fit')
 
     await selectFiles(wrapper, [good, bad])
-    await flushPromises()
+    await settle()
+    await vi.waitFor(() => expect(wrapper.find('[data-testid="retry-bad.fit"]').exists()).toBe(true))
     await wrapper.get('[data-testid="retry-bad.fit"]').trigger('click')
-    await flushPromises()
+    await settle()
 
     expect(importFits).toHaveBeenNthCalledWith(2, [bad])
     expect(importFits).toHaveBeenCalledTimes(2)
