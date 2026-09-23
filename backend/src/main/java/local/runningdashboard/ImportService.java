@@ -107,13 +107,25 @@ public class ImportService {
     }
 
     private Long existingActivity(GarminFitFixtureAdapter.DecodedActivity decoded) {
-        List<Long> matches = jdbc.query("SELECT id FROM activity WHERE sport = ? AND start_time = ?", (result, row) -> result.getLong(1), decoded.sport(), Timestamp.from(decoded.startTime()));
-        return matches.isEmpty() ? null : matches.getFirst();
+        List<ActivityIdentity> candidates = jdbc.query(
+                "SELECT id, elapsed_seconds, distance_meters FROM activity WHERE sport = ? AND start_time = ?",
+                (result, row) -> new ActivityIdentity(result.getLong("id"), (Double) result.getObject("elapsed_seconds"), (Double) result.getObject("distance_meters")),
+                decoded.sport(), Timestamp.from(decoded.startTime()));
+        return candidates.stream()
+                .filter(candidate -> sameMeasurement(candidate.elapsedSeconds(), decoded.elapsedSeconds(), 2d)
+                        && sameMeasurement(candidate.distanceMeters(), decoded.distanceMeters(), 5d))
+                .map(ActivityIdentity::id)
+                .findFirst()
+                .orElse(null);
+    }
+
+    private static boolean sameMeasurement(Double left, Double right, double tolerance) {
+        return left != null && right != null && Math.abs(left - right) <= tolerance;
     }
 
     private Long persist(GarminFitFixtureAdapter.DecodedActivity decoded, String hash, long sizeBytes) {
-        Long activityId = jdbc.queryForObject("INSERT INTO activity (sport, sub_sport, start_time, elapsed_seconds, moving_seconds, distance_meters, average_speed_mps, average_heart_rate, average_cadence, ascent_meters, calories) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
-                Long.class, decoded.sport(), decoded.subSport(), Timestamp.from(decoded.startTime()), decoded.elapsedSeconds(), decoded.movingSeconds(), decoded.distanceMeters(), decoded.averageSpeedMetersPerSecond(), decoded.averageHeartRate(), decoded.averageCadence(), decoded.ascentMeters(), decoded.calories());
+        Long activityId = jdbc.queryForObject("INSERT INTO activity (sport, sub_sport, start_time, elapsed_seconds, moving_seconds, distance_meters, average_speed_mps, average_heart_rate, maximum_heart_rate, average_cadence, ascent_meters, calories) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+                Long.class, decoded.sport(), decoded.subSport(), Timestamp.from(decoded.startTime()), decoded.elapsedSeconds(), decoded.movingSeconds(), decoded.distanceMeters(), decoded.averageSpeedMetersPerSecond(), decoded.averageHeartRate(), decoded.maximumHeartRate(), decoded.averageCadence(), decoded.ascentMeters(), decoded.calories());
         jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes) VALUES (?, ?, ?)", activityId, hash, sizeBytes);
         int index = 0;
         for (GarminFitFixtureAdapter.DecodedRecord record : decoded.records()) {
@@ -155,4 +167,5 @@ public class ImportService {
     public record ImportBatch(List<ImportOutcome> outcomes, ImportBatchError batchError) { }
     public record ImportBatchError(String code, String message) { }
     private record StagedFile(Path path, String hash, long size) { }
+    private record ActivityIdentity(long id, Double elapsedSeconds, Double distanceMeters) { }
 }

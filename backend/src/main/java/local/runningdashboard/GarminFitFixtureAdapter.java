@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
@@ -55,7 +56,7 @@ public class GarminFitFixtureAdapter {
 
     public record DecodedActivity(String sport, String subSport, Instant startTime, Double elapsedSeconds,
                                   Double movingSeconds, Double distanceMeters, Double averageSpeedMetersPerSecond,
-                                  Integer averageHeartRate, Integer averageCadence, Double ascentMeters,
+                                  Integer averageHeartRate, Integer maximumHeartRate, Integer averageCadence, Double ascentMeters,
                                   Integer calories, List<DecodedRecord> records, List<DecodedLap> laps) {
     }
 
@@ -95,7 +96,7 @@ public class GarminFitFixtureAdapter {
         public void onMesg(SessionMesg mesg) {
             sessions.add(new DecodedActivity(stringValue(mesg.getSport()), stringValue(mesg.getSubSport()), instant(mesg.getStartTime()),
                     doubleValue(mesg.getTotalElapsedTime()), doubleValue(mesg.getTotalTimerTime()), doubleValue(mesg.getTotalDistance()),
-                    doubleValue(mesg.getAvgSpeed()), integerValue(mesg.getAvgHeartRate()), integerValue(mesg.getAvgCadence()),
+                    doubleValue(mesg.getAvgSpeed()), integerValue(mesg.getAvgHeartRate()), integerValue(mesg.getMaxHeartRate()), integerValue(mesg.getAvgCadence()),
                     doubleValue(mesg.getTotalAscent()), integerValue(mesg.getTotalCalories()), List.of(), List.of()));
         }
 
@@ -108,8 +109,9 @@ public class GarminFitFixtureAdapter {
                 Double elapsed = record.timestamp() == null ? null : (double) (record.timestamp().toEpochMilli() - session.startTime().toEpochMilli()) / 1000d;
                 ordered.add(new DecodedRecord(record.timestamp(), elapsed, record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence()));
             }
+            ordered.sort(Comparator.comparing(DecodedRecord::timestamp, Comparator.nullsLast(Comparator.naturalOrder())));
             return new DecodedActivity(session.sport(), session.subSport(), session.startTime(), session.elapsedSeconds(), session.movingSeconds(),
-                    session.distanceMeters(), session.averageSpeedMetersPerSecond(), session.averageHeartRate(), session.averageCadence(), session.ascentMeters(),
+                    session.distanceMeters(), session.averageSpeedMetersPerSecond(), session.averageHeartRate(), session.maximumHeartRate(), session.averageCadence(), session.ascentMeters(),
                     session.calories(), List.copyOf(ordered), List.copyOf(laps));
         }
 
