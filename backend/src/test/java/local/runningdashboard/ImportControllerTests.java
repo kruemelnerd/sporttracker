@@ -9,9 +9,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.io.InputStream;
+import java.io.ByteArrayInputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.HexFormat;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -20,6 +25,8 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = "running-dashboard.data-directory=${java.io.tmpdir}/running-dashboard-import-tests")
@@ -32,6 +39,12 @@ class ImportControllerTests {
 
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Autowired
+    private GarminFitFixtureAdapter adapter;
+
+    @Autowired
+    private PlatformTransactionManager transactionManager;
 
     @AfterEach
     void removeFixtureAggregate() {
@@ -63,6 +76,9 @@ class ImportControllerTests {
         assertNull(jdbc.queryForObject("SELECT altitude_meters FROM activity_record WHERE activity_id = ? AND record_index = 0", Double.class, activityId));
         assertEquals(51.78287987597287d, jdbc.queryForObject("SELECT latitude FROM activity_record WHERE activity_id = ? AND record_index = 0", Double.class, activityId));
         assertTrue(jdbc.queryForObject("SELECT duration_seconds > 0 AND distance_meters > 0 FROM lap WHERE activity_id = ? AND lap_number = 1", Boolean.class, activityId));
+        String originalPath = jdbc.queryForObject("SELECT original_path FROM import_file WHERE activity_id = ?", String.class, activityId);
+        assertTrue(Files.exists(Path.of(System.getProperty("java.io.tmpdir"), "running-dashboard-import-tests", originalPath)));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' AND data_type = 'bytea'", Integer.class));
     }
 
     @Test
@@ -97,6 +113,21 @@ class ImportControllerTests {
         mockMvc.perform(multipart("/api/imports").file(new MockMultipartFile("files", "activity.fit", "application/octet-stream", bytes)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.outcomes[0].status").value("DUPLICATE"));
+    }
+
+    @Test
+    void classifiesAChangedByteReexportWithTheSameSessionAsDuplicate() throws Exception {
+        removeFixtureAggregate();
+        byte[] original = fixtureBytes();
+        byte[] reexport = Arrays.copyOf(original, original.length + 1);
+        GarminFitFixtureAdapter.DecodedActivity decoded = adapter.decode(new ByteArrayInputStream(original));
+        ImportService imports = new ImportService(new GarminFitFixtureAdapter() {
+            @Override public DecodedActivity decode(InputStream ignored) { return decoded; }
+        }, jdbc, new TransactionTemplate(transactionManager), Path.of(System.getProperty("java.io.tmpdir"), "running-dashboard-import-tests").toString(), new ImportProperties(10, 10_485_760, 104_857_600));
+
+        assertEquals("IMPORTED", imports.importFiles(List.of(new MockMultipartFile("files", "activity.fit", "application/octet-stream", original))).outcomes().getFirst().status());
+        assertEquals("DUPLICATE", imports.importFiles(List.of(new MockMultipartFile("files", "reexport.fit", "application/octet-stream", reexport))).outcomes().getFirst().status());
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity WHERE sport = 'running' AND start_time = ?", Integer.class, Timestamp.from(Instant.parse("2025-08-14T06:03:00Z"))));
     }
 
     @Test

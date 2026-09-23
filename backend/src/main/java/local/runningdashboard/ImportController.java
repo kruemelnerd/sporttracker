@@ -1,6 +1,7 @@
 package local.runningdashboard;
 
 import java.util.List;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.util.MultiValueMap;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
+@ConditionalOnProperty(prefix = "running-dashboard.import", name = "enabled", havingValue = "true", matchIfMissing = true)
 @RequestMapping("/api/imports")
 public class ImportController {
     private final ImportService imports;

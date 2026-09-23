@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionDefinition;
@@ -19,6 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
+@ConditionalOnProperty(prefix = "running-dashboard.import", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ImportService {
     private final GarminFitFixtureAdapter adapter;
     private final JdbcTemplate jdbc;
