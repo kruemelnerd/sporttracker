@@ -27,4 +27,11 @@ describe('DashboardView', () => {
     await vi.waitFor(() => expect(wrapper.find('[data-testid="empty-state"]').exists()).toBe(true))
     expect(wrapper.text()).not.toMatch(/NaN|undefined|null/)
   })
+
+  it('provides a visible link from the dashboard to FIT import', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('[]', { status: 200 }))
+    const wrapper = mount(DashboardView, { global: { stubs: { RouterLink: { template: '<a :href="to"><slot /></a>', props: ['to'] } } } })
+    await vi.waitFor(() => expect(wrapper.find('[href="/import"]').exists()).toBe(true))
+    expect(wrapper.get('[href="/import"]').text()).toContain('FIT-Dateien importieren')
+  })
 })

@@ -1,6 +1,7 @@
 <template>
   <section class="import-view">
     <h2>Import running activities</h2>
+    <a href="/">Back to dashboard</a>
     <label>
       FIT files
       <input ref="picker" data-testid="fit-picker" type="file" accept=".fit" multiple @change="select" />
@@ -18,6 +19,9 @@
     >
       Drop FIT files here or choose files above.
     </div>
+    <p v-if="selectionError" role="alert">{{ selectionError }}</p>
+    <p v-if="selected.length" aria-live="polite">{{ selected.length }} file(s) selected for import.</p>
+    <button data-testid="start-import" type="button" :disabled="!selected.length" @click="startImport">Import selected files</button>
     <p v-if="batchError" data-testid="batch-error" role="alert">{{ batchError.message }}</p>
     <ol aria-label="Import queue">
       <li v-for="item in queue" :key="item.id" :data-testid="`import-row-${item.file.name}`">
@@ -37,7 +41,9 @@ type QueueItem = { id: number; file: File; state: QueueState; message: string }
 
 const picker = ref<HTMLInputElement | null>(null)
 const queue = ref<QueueItem[]>([])
+const selected = ref<QueueItem[]>([])
 const batchError = ref<ImportBatchError | null>(null)
+const selectionError = ref('')
 let nextId = 1
 
 const messageFor = (outcome: ImportOutcome) => {
@@ -49,9 +55,20 @@ const messageFor = (outcome: ImportOutcome) => {
 }
 
 function addFiles(files: File[]) {
-  const items = files.map((file) => ({ id: nextId++, file, state: 'PENDING' as const, message: 'Waiting to import.' }))
+  selectionError.value = files.some((file) => !file.name.toLowerCase().endsWith('.fit'))
+    ? 'Only .fit files can be imported.'
+    : ''
+  const items = files.filter((file) => file.name.toLowerCase().endsWith('.fit'))
+    .map((file) => ({ id: nextId++, file, state: 'PENDING' as const, message: 'Waiting to import.' }))
   queue.value.push(...items)
-  void upload(queue.value.slice(-items.length))
+  selected.value.push(...items)
+}
+
+function startImport() {
+  const items = [...selected.value]
+  if (!items.length) return
+  selected.value = []
+  void upload(items)
 }
 
 async function upload(items: QueueItem[]) {
@@ -62,6 +79,7 @@ async function upload(items: QueueItem[]) {
     if (result.batchError) {
       batchError.value = result.batchError
       items.forEach((item) => { item.state = 'PENDING'; item.message = 'Waiting for a corrected selection.' })
+      selected.value.push(...items)
       return
     }
     items.forEach((item, index) => applyOutcome(item, result.outcomes[index]))

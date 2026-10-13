@@ -17,27 +17,47 @@ async function settle() { await flushPromises() }
 describe('ImportView', () => {
   beforeEach(() => importFits.mockReset())
 
-  it('queues picker and dropped files, then renders their independent outcomes', async () => {
-    importFits
-      .mockResolvedValueOnce({ outcomes: [{ status: 'IMPORTED', activityId: 1, originalRetained: true, code: null }], batchError: null })
-      .mockResolvedValueOnce({ outcomes: [{ status: 'DUPLICATE', activityId: 1, originalRetained: false, code: 'DUPLICATE_HASH' }], batchError: null })
+  it('lets the user select multiple FIT files and start one batch', async () => {
+    importFits.mockResolvedValue({ outcomes: [
+      { status: 'IMPORTED', activityId: 1, originalRetained: true, code: null },
+      { status: 'DUPLICATE', activityId: 1, originalRetained: false, code: 'DUPLICATE_HASH' },
+    ], batchError: null })
 
     const wrapper = mount(ImportView)
     const picked = file('picked.fit')
-    const dropped = file('dropped.fit')
+    const duplicate = file('duplicate.fit')
 
-    await selectFiles(wrapper, [picked])
-    await wrapper.get('[data-testid="fit-drop-zone"]').trigger('drop', { dataTransfer: { files: [dropped] } })
+    expect(wrapper.get('[data-testid="start-import"]').attributes('disabled')).toBeDefined()
+    await selectFiles(wrapper, [picked, duplicate])
+    expect(importFits).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('picked.fit')
+    expect(wrapper.text()).toContain('duplicate.fit')
+    await wrapper.get('[data-testid="start-import"]').trigger('click')
     await settle()
 
-    await vi.waitFor(() => expect(wrapper.get('[data-testid="import-row-dropped.fit"]').text()).toContain('DUPLICATE'))
-
-    expect(importFits).toHaveBeenCalledWith([picked])
-    expect(importFits).toHaveBeenCalledWith([dropped])
+    expect(importFits).toHaveBeenCalledWith([picked, duplicate])
     expect(wrapper.get('[data-testid="import-row-picked.fit"]').text()).toContain('IMPORTED')
-    expect(wrapper.get('[data-testid="import-row-dropped.fit"]').text()).toContain('DUPLICATE')
+    expect(wrapper.get('[data-testid="import-row-duplicate.fit"]').text()).toContain('DUPLICATE')
     expect(wrapper.text()).toContain('Imported successfully.')
     expect(wrapper.text()).toContain('Already imported.')
+  })
+
+  it('rejects files that are not named as FIT files', async () => {
+    const wrapper = mount(ImportView)
+    await selectFiles(wrapper, [file('notes.txt')])
+    expect(wrapper.text()).toContain('Only .fit files can be imported.')
+    expect(importFits).not.toHaveBeenCalled()
+  })
+
+  it('keeps drag and drop available but waits for explicit import', async () => {
+    importFits.mockResolvedValue({ outcomes: [{ status: 'IMPORTED', activityId: 1, originalRetained: true, code: null }], batchError: null })
+    const wrapper = mount(ImportView)
+    const dropped = file('dropped.fit')
+    await wrapper.get('[data-testid="fit-drop-zone"]').trigger('drop', { dataTransfer: { files: [dropped] } })
+    expect(importFits).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="start-import"]').trigger('click')
+    await flushPromises()
+    expect(importFits).toHaveBeenCalledWith([dropped])
   })
 
   it.each(['SKIPPED_NON_RUN', 'INVALID', 'FAILED'] as const)('renders the safe %s outcome message', async (status) => {
@@ -54,11 +74,12 @@ describe('ImportView', () => {
     importFits.mockResolvedValue({ outcomes: [], batchError: { code: 'BATCH_COUNT_EXCEEDED', message: 'Select at most 10 files per import.' } })
     const wrapper = mount(ImportView)
 
-    await selectFiles(wrapper, [file('run.fit')])
+    await selectFiles(wrapper, Array.from({ length: 11 }, (_, index) => file(`run-${index}.fit`)))
+    await wrapper.get('[data-testid="start-import"]').trigger('click')
     await settle()
 
     expect(wrapper.get('[data-testid="batch-error"]').text()).toContain('Select at most 10 files')
-    expect(wrapper.get('[data-testid="import-row-run.fit"]').text()).toContain('PENDING')
+    expect(wrapper.get('[data-testid="import-row-run-0.fit"]').text()).toContain('PENDING')
   })
 
   it('retries only the selected failed item without changing its neighbors', async () => {
@@ -70,6 +91,7 @@ describe('ImportView', () => {
     const bad = file('bad.fit')
 
     await selectFiles(wrapper, [good, bad])
+    await wrapper.get('[data-testid="start-import"]').trigger('click')
     await settle()
     await vi.waitFor(() => expect(wrapper.find('[data-testid="retry-bad.fit"]').exists()).toBe(true))
     await wrapper.get('[data-testid="retry-bad.fit"]').trigger('click')

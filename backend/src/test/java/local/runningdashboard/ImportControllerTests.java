@@ -36,6 +36,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @ImportAutoConfiguration(JdbcTemplateAutoConfiguration.class)
 class ImportControllerTests {
     private static final String FIXTURE_HASH = "d54a2ed4389fdf07955b5c92d166860c5c9138ba9dceea9ccfa623667a834180";
+    private static final String SECOND_FIXTURE_HASH = "3f274f8a9680dfdc7fc21e2f780a33fafc100e99b5e4191cb2a47fa2ad210101";
 
     @Autowired
     private MockMvc mockMvc;
@@ -52,6 +53,7 @@ class ImportControllerTests {
     @AfterEach
     void removeFixtureAggregate() {
         jdbc.update("DELETE FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", FIXTURE_HASH);
+        jdbc.update("DELETE FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", SECOND_FIXTURE_HASH);
     }
 
     @Test
@@ -87,6 +89,25 @@ class ImportControllerTests {
                 .andExpect(jsonPath("$[0].id").value(activityId))
                 .andExpect(jsonPath("$[0].sport").value("running"))
                 .andExpect(jsonPath("$[0].distanceMeters").value(5000d));
+    }
+
+    @Test
+    void importsSecondSyntheticFixtureWithDistinctDashboardValues() throws Exception {
+        removeFixtureAggregate();
+        byte[] bytes;
+        try (InputStream input = new ClassPathResource("fit/synthetic-running-2.fit").getInputStream()) {
+            bytes = input.readAllBytes();
+        }
+        assertEquals(SECOND_FIXTURE_HASH, HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)));
+
+        mockMvc.perform(multipart("/api/imports").file(new MockMultipartFile("files", "synthetic-running-2.fit", "application/octet-stream", bytes)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.outcomes[0].status").value("IMPORTED"));
+
+        Long activityId = jdbc.queryForObject("SELECT activity_id FROM import_file WHERE sha256 = ?", Long.class, SECOND_FIXTURE_HASH);
+        assertEquals(Instant.parse("2024-01-08T12:00:00Z"), jdbc.queryForObject("SELECT start_time FROM activity WHERE id = ?", Timestamp.class, activityId).toInstant());
+        assertEquals(7000d, jdbc.queryForObject("SELECT distance_meters FROM activity WHERE id = ?", Double.class, activityId));
+        assertEquals(1800d, jdbc.queryForObject("SELECT elapsed_seconds FROM activity WHERE id = ?", Double.class, activityId));
     }
 
     @Test
