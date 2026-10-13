@@ -11,6 +11,17 @@ export type FixtureSummary = {
   lapCount: number
 }
 
+export type Activity = {
+  id: number
+  sport: string
+  subSport: string | null
+  startTime: string
+  elapsedSeconds: number | null
+  distanceMeters: number | null
+  averageHeartRate: number | null
+  ascentMeters: number | null
+}
+
 export type ImportOutcome = {
   status: 'IMPORTED' | 'DUPLICATE' | 'SKIPPED_NON_RUN' | 'INVALID' | 'FAILED'
   activityId: number | null
@@ -38,6 +49,12 @@ export async function getFixtureSummary(): Promise<FixtureSummary> {
   const response = await fetch('/api/fixture-summary')
   if (!response.ok) throw new Error(`Fixture summary request failed: ${response.status}`)
   return response.json() as Promise<FixtureSummary>
+}
+
+export async function getActivities(from: string): Promise<Activity[]> {
+  const response = await fetch(`/api/activities?from=${encodeURIComponent(from)}`)
+  if (!response.ok) throw new Error(`Activities request failed: ${response.status}`)
+  return response.json() as Promise<Activity[]>
 }
 
 export async function importFits(files: File[]): Promise<ImportResponse> {

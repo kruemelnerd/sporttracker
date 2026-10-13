@@ -2,11 +2,11 @@ import { expect, test } from '@playwright/test'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
-test('imports the committed running FIT fixture', async ({ page, request }) => {
-  const fixture = path.resolve(import.meta.dirname, '../../../backend/src/test/resources/fit/20053968686_ACTIVITY.fit')
+test('imports the local running FIT fixture', async ({ page, request }) => {
+  const fixture = path.resolve(import.meta.dirname, '../../../backend/src/test/resources/fit/synthetic-running.fit')
   await page.goto('/import')
   await page.getByTestId('fit-picker').setInputFiles(fixture)
-  await expect(page.getByTestId('import-row-20053968686_ACTIVITY.fit')).toContainText('IMPORTED')
+  await expect(page.getByTestId('import-row-synthetic-running.fit')).toContainText('IMPORTED')
   const response = await request.post('/api/imports', {
     multipart: { file: { name: 'activity.fit', mimeType: 'application/octet-stream', buffer: await readFile(fixture) } },
   })

@@ -10,7 +10,7 @@ test('renders the real fixture summary through the Vite proxy', async ({ page, r
   expect(summary.recordCount).toBeGreaterThan(0)
   expect(summary.lapCount).toBeGreaterThan(0)
 
-  await page.goto('/')
+  await page.goto('/fixture-summary')
   await expect(page.getByTestId('fixture-summary')).toBeVisible()
   await expect(page.getByTestId('sport')).toHaveText(summary.sport)
   await expect(page.getByTestId('status')).toHaveText(summary.status)

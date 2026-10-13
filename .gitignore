@@ -14,3 +14,4 @@ frontend/import-smoke.log
 graphify-out/
 *.log
 **/*.fit
+!backend/src/test/resources/fit/synthetic-running.fit

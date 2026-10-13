@@ -9,7 +9,7 @@ version = "0.1.0-SNAPSHOT"
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
@@ -31,7 +31,7 @@ tasks.withType<Test> {
 }
 
 tasks.named<ProcessResources>("processResources") {
-    from("src/test/resources/fit/20053968686_ACTIVITY.fit") {
+    from("src/test/resources/fit/synthetic-running.fit") {
         into("fit")
     }
 }

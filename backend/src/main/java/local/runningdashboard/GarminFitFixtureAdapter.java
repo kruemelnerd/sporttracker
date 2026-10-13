@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class GarminFitFixtureAdapter {
-    private static final String FIXTURE = "fit/20053968686_ACTIVITY.fit";
+    private static final String FIXTURE = "fit/synthetic-running.fit";
     private static final double SEMICIRCLES_PER_DEGREE = 2147483648d / 180d;
 
     public FixtureSummary decodeFixture() {

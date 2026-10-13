@@ -3,7 +3,7 @@ package local.runningdashboard;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -20,6 +20,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.AfterEach;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
+import org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.core.io.ClassPathResource;
@@ -31,8 +33,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = "running-dashboard.data-directory=${java.io.tmpdir}/running-dashboard-import-tests")
 @AutoConfigureMockMvc
+@ImportAutoConfiguration(JdbcTemplateAutoConfiguration.class)
 class ImportControllerTests {
-    private static final String FIXTURE_HASH = "fe0710d14f164f033948d3f499ee72886fbf1f11c5193540459cbd37a1d39a67";
+    private static final String FIXTURE_HASH = "d54a2ed4389fdf07955b5c92d166860c5c9138ba9dceea9ccfa623667a834180";
 
     @Autowired
     private MockMvc mockMvc;
@@ -55,7 +58,7 @@ class ImportControllerTests {
     void importsOneFitFileWithCanonicalPersistedValues() throws Exception {
         removeFixtureAggregate();
         byte[] bytes;
-        try (InputStream input = new ClassPathResource("fit/20053968686_ACTIVITY.fit").getInputStream()) {
+        try (InputStream input = new ClassPathResource("fit/synthetic-running.fit").getInputStream()) {
             bytes = input.readAllBytes();
         }
         assertEquals(FIXTURE_HASH, HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes)));
@@ -68,17 +71,22 @@ class ImportControllerTests {
                 .andExpect(jsonPath("$.outcomes[0].originalRetained").value(true));
 
         Long activityId = jdbc.queryForObject("SELECT activity_id FROM import_file WHERE sha256 = ?", Long.class, FIXTURE_HASH);
-        assertEquals(Instant.parse("2025-08-14T06:03:00Z"), jdbc.queryForObject("SELECT start_time FROM activity WHERE id = ?", Timestamp.class, activityId).toInstant());
-        assertEquals(10137.0498046875d, jdbc.queryForObject("SELECT distance_meters FROM activity WHERE id = ?", Double.class, activityId));
-        assertEquals(3578, jdbc.queryForObject("SELECT count(*) FROM activity_record WHERE activity_id = ?", Integer.class, activityId));
-        assertEquals(11, jdbc.queryForObject("SELECT count(*) FROM lap WHERE activity_id = ?", Integer.class, activityId));
-        assertEquals(0, jdbc.queryForObject("SELECT cadence FROM activity_record WHERE activity_id = ? AND record_index = 0", Integer.class, activityId));
-        assertNull(jdbc.queryForObject("SELECT altitude_meters FROM activity_record WHERE activity_id = ? AND record_index = 0", Double.class, activityId));
-        assertEquals(51.78287987597287d, jdbc.queryForObject("SELECT latitude FROM activity_record WHERE activity_id = ? AND record_index = 0", Double.class, activityId));
+        assertEquals(Instant.parse("2024-01-01T12:00:00Z"), jdbc.queryForObject("SELECT start_time FROM activity WHERE id = ?", Timestamp.class, activityId).toInstant());
+        assertEquals(5000d, jdbc.queryForObject("SELECT distance_meters FROM activity WHERE id = ?", Double.class, activityId));
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM activity_record WHERE activity_id = ?", Integer.class, activityId));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM lap WHERE activity_id = ?", Integer.class, activityId));
+        assertEquals(140, jdbc.queryForObject("SELECT heart_rate FROM activity_record WHERE activity_id = ? AND record_index = 0", Integer.class, activityId));
+        assertEquals(10d, jdbc.queryForObject("SELECT altitude_meters FROM activity_record WHERE activity_id = ? AND record_index = 0", Double.class, activityId));
         assertTrue(jdbc.queryForObject("SELECT duration_seconds > 0 AND distance_meters > 0 FROM lap WHERE activity_id = ? AND lap_number = 1", Boolean.class, activityId));
         String originalPath = jdbc.queryForObject("SELECT original_path FROM import_file WHERE activity_id = ?", String.class, activityId);
         assertTrue(Files.exists(Path.of(System.getProperty("java.io.tmpdir"), "running-dashboard-import-tests", originalPath)));
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema = 'public' AND data_type = 'bytea'", Integer.class));
+
+        mockMvc.perform(get("/api/activities").param("from", "2024-01-01T12:00:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(activityId))
+                .andExpect(jsonPath("$[0].sport").value("running"))
+                .andExpect(jsonPath("$[0].distanceMeters").value(5000d));
     }
 
     @Test
@@ -127,7 +135,7 @@ class ImportControllerTests {
 
         assertEquals("IMPORTED", imports.importFiles(List.of(new MockMultipartFile("files", "activity.fit", "application/octet-stream", original))).outcomes().getFirst().status());
         assertEquals("DUPLICATE", imports.importFiles(List.of(new MockMultipartFile("files", "reexport.fit", "application/octet-stream", reexport))).outcomes().getFirst().status());
-        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity WHERE sport = 'running' AND start_time = ?", Integer.class, Timestamp.from(Instant.parse("2025-08-14T06:03:00Z"))));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity WHERE sport = 'running' AND start_time = ?", Integer.class, Timestamp.from(Instant.parse("2024-01-01T12:00:00Z"))));
     }
 
     @Test
@@ -153,7 +161,7 @@ class ImportControllerTests {
     }
 
     private byte[] fixtureBytes() throws Exception {
-        try (InputStream input = new ClassPathResource("fit/20053968686_ACTIVITY.fit").getInputStream()) {
+        try (InputStream input = new ClassPathResource("fit/synthetic-running.fit").getInputStream()) {
             return input.readAllBytes();
         }
     }
