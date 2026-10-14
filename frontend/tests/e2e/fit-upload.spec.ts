@@ -11,7 +11,12 @@ test('imports FIT files from the dashboard and keeps persisted metrics correct f
 
   await page.getByRole('link', { name: 'FIT-Dateien importieren' }).click()
   await page.getByTestId('fit-picker').setInputFiles(fixture('synthetic-running.fit'))
+  const firstUpload = page.waitForResponse((response) => response.url().endsWith('/api/imports') && response.request().method() === 'POST')
+  await expect(page.getByTestId('import-row-synthetic-running.fit')).toContainText('PENDING — Select “Import selected files” to start.')
   await page.getByTestId('start-import').click()
+  const firstResponse = await firstUpload
+  expect(firstResponse.ok()).toBeTruthy()
+  expect((await firstResponse.json()).outcomes[0].status).toBe('IMPORTED')
   await expect(page.getByTestId('import-row-synthetic-running.fit')).toContainText('Imported successfully.')
   await page.getByRole('link', { name: 'Back to dashboard' }).click()
 
@@ -29,6 +34,12 @@ test('imports FIT files from the dashboard and keeps persisted metrics correct f
   await expect(page.getByTestId('average-pace')).toHaveText('6:00 min/km')
   await expect(page.getByTestId('week-4')).toContainText('1 Lauf')
   await expect(page.getByTestId('week-4')).toContainText('5.00 km')
+
+  await firstRun.click()
+  await expect(page).toHaveURL(/\/activities\/1$/)
+  await expect(page.getByTestId('pace-chart')).toHaveAttribute('aria-label', /Pace-Diagramm \([1-9]\d* Werte\)/)
+  await expect(page.getByTestId('elevation-chart')).toHaveAttribute('aria-label', /Höhenprofil-Diagramm \([1-9]\d* Werte\)/)
+  await page.getByRole('link', { name: /Zurück zum Dashboard/ }).click()
 
   await page.getByRole('link', { name: 'FIT-Dateien importieren' }).click()
   await page.getByTestId('fit-picker').setInputFiles(fixture('synthetic-running.fit'))

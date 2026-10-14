@@ -38,8 +38,17 @@ export function chartSeries(records: ActivityRecord[]) {
     }
   }
   const reduced = ordered.filter((_, index) => indices.has(index))
+  const pace = ordered.map((record, index) => {
+    if (record.speedMetersPerSecond !== null && record.speedMetersPerSecond > 0) return 1000 / record.speedMetersPerSecond
+    const previous = ordered[index - 1]
+    if (!previous || record.distanceMeters === null || previous.distanceMeters === null || record.elapsedSeconds === null || previous.elapsedSeconds === null) return null
+    const distance = record.distanceMeters - previous.distanceMeters
+    const elapsed = record.elapsedSeconds - previous.elapsedSeconds
+    return distance > 0 && elapsed > 0 ? 1000 * elapsed / distance : null
+  })
+  const reducedPace = [...indices].sort((a, b) => a - b).map((index) => pace[index])
   return {
-    pace: reduced.map((record) => [record.distanceMeters!, record.speedMetersPerSecond && record.speedMetersPerSecond > 0 ? 1000 / record.speedMetersPerSecond : null] as [number, number | null]),
+    pace: reduced.map((record, index) => [record.distanceMeters!, reducedPace[index]] as [number, number | null]),
     heartRate: reduced.map((record) => [record.distanceMeters!, record.heartRate] as [number, number | null]),
     elevation: reduced.map((record) => [record.distanceMeters!, record.altitudeMeters] as [number, number | null]),
     cadence: reduced.map((record) => [record.distanceMeters!, record.cadence] as [number, number | null]),

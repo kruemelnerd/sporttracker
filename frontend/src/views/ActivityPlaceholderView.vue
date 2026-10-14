@@ -28,9 +28,9 @@
         <h3 id="charts-heading">Trainingsverlauf</h3>
         <p v-if="!charts.pace.length">Für diesen Lauf sind keine Messpunkte vorhanden.</p>
         <div v-else class="charts">
-          <div ref="paceElement" class="chart" data-testid="pace-chart" aria-label="Pace-Diagramm"></div>
+          <div ref="paceElement" class="chart" data-testid="pace-chart" :aria-label="`Pace-Diagramm (${charts.pace.filter(([, value]) => value !== null).length} Werte)`"></div>
           <div ref="heartElement" class="chart" data-testid="heart-rate-chart" aria-label="Herzfrequenz-Diagramm"></div>
-          <div ref="elevationElement" class="chart" data-testid="elevation-chart" aria-label="Höhenprofil-Diagramm"></div>
+          <div ref="elevationElement" class="chart" data-testid="elevation-chart" :aria-label="`Höhenprofil-Diagramm (${charts.elevation.filter(([, value]) => value !== null).length} Werte)`"></div>
           <div v-if="charts.cadence.some((point) => point[1] !== null)" ref="cadenceElement" class="chart" aria-label="Kadenz-Diagramm"></div>
         </div>
       </section>
@@ -164,7 +164,6 @@ function disposeVisuals() {
 }
 
 onMounted(async () => {
-  console.log('view loaded detail code')
   await loadActivity(String(currentRoute.params.id))
 })
 watch(() => currentRoute.params.id, (id) => id && loadActivity(String(id)))

@@ -32,6 +32,7 @@ describe('ImportView', () => {
     expect(importFits).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('picked.fit')
     expect(wrapper.text()).toContain('duplicate.fit')
+    expect(wrapper.get('[data-testid="import-row-picked.fit"]').text()).toContain('Select “Import selected files” to start.')
     await wrapper.get('[data-testid="start-import"]').trigger('click')
     await settle()
 

@@ -13,12 +13,21 @@ describe('activity detail formatting and chart preparation', () => {
   it('uses distance for aligned series without filling missing measurements', () => {
     const rows = chartSeries([
       { elapsedSeconds: 0, distanceMeters: 0, latitude: null, longitude: null, altitudeMeters: 10, speedMetersPerSecond: 2, heartRate: 140, cadence: null },
-      { elapsedSeconds: 20, distanceMeters: 100, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: null, heartRate: null, cadence: 80 },
+      { elapsedSeconds: null, distanceMeters: 100, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: null, heartRate: null, cadence: 80 },
       { elapsedSeconds: 40, distanceMeters: 200, latitude: null, longitude: null, altitudeMeters: 12, speedMetersPerSecond: 2, heartRate: 150, cadence: 82 },
     ])
     expect(rows.pace).toEqual([[0, 500], [100, null], [200, 500]])
     expect(rows.heartRate).toEqual([[0, 140], [100, null], [200, 150]])
     expect(rows.elevation).toEqual([[0, 10], [100, null], [200, 12]])
+  })
+
+  it('derives pace from cumulative FIT distance and elapsed time when speed is unavailable', () => {
+    const series = chartSeries([
+      { elapsedSeconds: 0, distanceMeters: 0, latitude: null, longitude: null, altitudeMeters: 100, speedMetersPerSecond: null, heartRate: 140, cadence: 80 },
+      { elapsedSeconds: 300, distanceMeters: 1000, latitude: null, longitude: null, altitudeMeters: 102, speedMetersPerSecond: null, heartRate: 145, cadence: 82 },
+      { elapsedSeconds: 600, distanceMeters: 2000, latitude: null, longitude: null, altitudeMeters: 101, speedMetersPerSecond: null, heartRate: 150, cadence: 84 },
+    ])
+    expect(series.pace).toEqual([[0, null], [1000, 300], [2000, 300]])
   })
 
   it('reduces large series deterministically and retains endpoints and alignment', () => {

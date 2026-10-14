@@ -54,6 +54,11 @@ public class GarminFitFixtureAdapter {
         return Double.isFinite(degrees) && degrees >= -limit && degrees <= limit ? degrees : null;
     }
 
+    static Double preferEnhanced(Number standard, Number enhanced) {
+        Number value = enhanced != null ? enhanced : standard;
+        return value == null ? null : value.doubleValue();
+    }
+
     public record DecodedActivity(String sport, String subSport, Instant startTime, Double elapsedSeconds,
                                   Double movingSeconds, Double distanceMeters, Double averageSpeedMetersPerSecond,
                                   Integer averageHeartRate, Integer maximumHeartRate, Integer averageCadence, Double ascentMeters,
@@ -81,7 +86,7 @@ public class GarminFitFixtureAdapter {
         public void onMesg(RecordMesg mesg) {
             Instant timestamp = instant(mesg.getTimestamp());
             records.add(new DecodedRecord(timestamp, null, doubleValue(mesg.getDistance()), degrees(mesg.getPositionLat(), true),
-                    degrees(mesg.getPositionLong(), false), doubleValue(mesg.getAltitude()), doubleValue(mesg.getSpeed()),
+                    degrees(mesg.getPositionLong(), false), preferEnhanced(mesg.getAltitude(), mesg.getEnhancedAltitude()), preferEnhanced(mesg.getSpeed(), mesg.getEnhancedSpeed()),
                     integerValue(mesg.getHeartRate()), integerValue(mesg.getCadence()), null));
         }
 

@@ -89,13 +89,17 @@ class ImportControllerTests {
                 .andExpect(jsonPath("$[?(@.id == " + activityId + ")].sport").value(org.hamcrest.Matchers.contains("running")))
                 .andExpect(jsonPath("$[?(@.id == " + activityId + ")].distanceMeters").value(org.hamcrest.Matchers.contains(5000d)));
 
+        jdbc.update("UPDATE activity_record SET altitude_meters = NULL WHERE activity_id = ?", activityId);
+
         mockMvc.perform(get("/api/activities/{id}", activityId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.activity.distanceMeters").value(5000d))
                 .andExpect(jsonPath("$.records.length()").value(2))
                 .andExpect(jsonPath("$.records[0].heartRate").value(140))
                 .andExpect(jsonPath("$.records[0].elapsedSeconds").value(0d))
+                .andExpect(jsonPath("$.records[0].altitudeMeters").value(10d))
                 .andExpect(jsonPath("$.laps.length()").value(1));
+        assertEquals(10d, jdbc.queryForObject("SELECT altitude_meters FROM activity_record WHERE activity_id = ? AND record_index = 0", Double.class, activityId));
     }
 
     @Test

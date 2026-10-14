@@ -28,4 +28,10 @@ class GarminFitFixtureAdapterTests {
         assertEquals(2, summary.recordCount());
         assertEquals(1, summary.lapCount());
     }
+
+    @Test
+    void prefersEnhancedFitAltitudeAndSpeedWhenPresent() {
+        assertEquals(123.5d, GarminFitFixtureAdapter.preferEnhanced(100d, 123.5f));
+        assertEquals(2.5d, GarminFitFixtureAdapter.preferEnhanced(2.5f, null));
+    }
 }

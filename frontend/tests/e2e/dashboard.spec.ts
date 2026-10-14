@@ -88,8 +88,9 @@ const detail = (id: number, withGps = false) => ({
   averageCadence: 84,
   calories: 300,
   records: [
-    { elapsedSeconds: 0, distanceMeters: 0, latitude: withGps ? 50 : null, longitude: withGps ? 8 : null, altitudeMeters: 100, speedMetersPerSecond: 2.7, heartRate: 140, cadence: 82 },
-    { elapsedSeconds: 1800, distanceMeters: 5000, latitude: withGps ? 50.01 : null, longitude: withGps ? 8.01 : null, altitudeMeters: 120, speedMetersPerSecond: 2.8, heartRate: 150, cadence: 86 },
+    { elapsedSeconds: 0, distanceMeters: 0, latitude: withGps ? 50 : null, longitude: withGps ? 8 : null, altitudeMeters: 100, speedMetersPerSecond: null, heartRate: 140, cadence: 82 },
+    { elapsedSeconds: 900, distanceMeters: 2500, latitude: withGps ? 50.005 : null, longitude: withGps ? 8.005 : null, altitudeMeters: 110, speedMetersPerSecond: null, heartRate: 145, cadence: 84 },
+    { elapsedSeconds: 1800, distanceMeters: 5000, latitude: withGps ? 50.01 : null, longitude: withGps ? 8.01 : null, altitudeMeters: 120, speedMetersPerSecond: null, heartRate: 150, cadence: 86 },
   ],
   laps: [{ lapNumber: 1, durationSeconds: 1800, distanceMeters: 5000, averageSpeedMetersPerSecond: 2.78, averageHeartRate: 145, averageCadence: 84, ascentMeters: 20, descentMeters: 5 }],
 })
@@ -105,8 +106,10 @@ test('direct activity URL loads detail with GPS map and recorded laps', async ({
   await expect(page.locator('.leaflet-container')).toBeVisible()
   await expect(page.locator('.leaflet-overlay-pane path')).toHaveCount(1)
   await expect(page.locator('[data-testid="pace-chart"] canvas')).toHaveCount(1)
+  await expect(page.getByTestId('pace-chart')).toHaveAttribute('aria-label', 'Pace-Diagramm (2 Werte)')
   await expect(page.locator('[data-testid="heart-rate-chart"] canvas')).toHaveCount(1)
   await expect(page.locator('[data-testid="elevation-chart"] canvas')).toHaveCount(1)
+  await expect(page.getByTestId('elevation-chart')).toHaveAttribute('aria-label', 'Höhenprofil-Diagramm (3 Werte)')
 })
 
 test('unknown activity URL shows a clear not-found message', async ({ page }) => {

@@ -59,7 +59,7 @@ function addFiles(files: File[]) {
     ? 'Only .fit files can be imported.'
     : ''
   const items = files.filter((file) => file.name.toLowerCase().endsWith('.fit'))
-    .map((file) => ({ id: nextId++, file, state: 'PENDING' as const, message: 'Waiting to import.' }))
+    .map((file) => ({ id: nextId++, file, state: 'PENDING' as const, message: 'Select “Import selected files” to start.' }))
   queue.value.push(...items)
   selected.value.push(...items)
 }
