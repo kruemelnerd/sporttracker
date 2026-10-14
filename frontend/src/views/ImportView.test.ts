@@ -32,21 +32,21 @@ describe('ImportView', () => {
     expect(importFits).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('picked.fit')
     expect(wrapper.text()).toContain('duplicate.fit')
-    expect(wrapper.get('[data-testid="import-row-picked.fit"]').text()).toContain('Select “Import selected files” to start.')
+    expect(wrapper.get('[data-testid="import-row-picked.fit"]').text()).toContain('Import starten, um die ausgewählten Dateien zu verarbeiten.')
     await wrapper.get('[data-testid="start-import"]').trigger('click')
     await settle()
 
     expect(importFits).toHaveBeenCalledWith([picked, duplicate])
     expect(wrapper.get('[data-testid="import-row-picked.fit"]').text()).toContain('IMPORTED')
     expect(wrapper.get('[data-testid="import-row-duplicate.fit"]').text()).toContain('DUPLICATE')
-    expect(wrapper.text()).toContain('Imported successfully.')
-    expect(wrapper.text()).toContain('Already imported.')
+    expect(wrapper.text()).toContain('Erfolgreich importiert')
+    expect(wrapper.text()).toContain('Bereits importiert')
   })
 
   it('rejects files that are not named as FIT files', async () => {
     const wrapper = mount(ImportView)
     await selectFiles(wrapper, [file('notes.txt')])
-    expect(wrapper.text()).toContain('Only .fit files can be imported.')
+    expect(wrapper.text()).toContain('Nur .fit-Dateien können importiert werden.')
     expect(importFits).not.toHaveBeenCalled()
   })
 
@@ -66,9 +66,11 @@ describe('ImportView', () => {
     const wrapper = mount(ImportView)
 
     await selectFiles(wrapper, [file(`${status}.fit`)])
+    await wrapper.get('[data-testid="start-import"]').trigger('click')
     await settle()
 
     expect(wrapper.text()).toContain(status)
+    expect(wrapper.get(`[data-testid="import-row-${status}.fit"]`).text()).toMatch(/Kein Lauftraining|Ungültige FIT-Datei|Import fehlgeschlagen/)
   })
 
   it('keeps rows and shows typed batch-limit errors', async () => {
@@ -79,6 +81,7 @@ describe('ImportView', () => {
     await wrapper.get('[data-testid="start-import"]').trigger('click')
     await settle()
 
+    expect(wrapper.get('[data-testid="batch-error"]').attributes('role')).toBe('alert')
     expect(wrapper.get('[data-testid="batch-error"]').text()).toContain('Select at most 10 files')
     expect(wrapper.get('[data-testid="import-row-run-0.fit"]').text()).toContain('PENDING')
   })
@@ -102,5 +105,18 @@ describe('ImportView', () => {
     expect(importFits).toHaveBeenCalledTimes(2)
     expect(wrapper.get('[data-testid="import-row-good.fit"]').text()).toContain('IMPORTED')
     expect(wrapper.get('[data-testid="import-row-bad.fit"]').text()).toContain('IMPORTED')
+  })
+
+  it('provides labelled keyboard activation and a live selected-file count', async () => {
+    const wrapper = mount(ImportView)
+    const picker = wrapper.get('[data-testid="fit-picker"]')
+    expect(picker.attributes('aria-label')).toBe('FIT-Dateien auswählen')
+    const click = vi.spyOn(picker.element as HTMLInputElement, 'click')
+    await wrapper.get('[data-testid="fit-drop-zone"]').trigger('click')
+    expect(click).toHaveBeenCalledOnce()
+
+    await selectFiles(wrapper, [file('one.fit'), file('two.fit')])
+    expect(wrapper.get('[data-testid="selection-count"]').attributes('role')).toBe('status')
+    expect(wrapper.get('[data-testid="selection-count"]').text()).toContain('2 Dateien ausgewählt')
   })
 })
