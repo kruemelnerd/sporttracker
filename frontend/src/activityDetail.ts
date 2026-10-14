@@ -1,5 +1,7 @@
 import type { ActivityRecord, Lap } from './api'
 
+const MAX_CHART_PACE_SECONDS_PER_KM = 20 * 60
+
 export function formatPace(secondsPerKm: number | null): string {
   if (secondsPerKm === null || !Number.isFinite(secondsPerKm) || secondsPerKm <= 0) return '–'
   const seconds = Math.round(secondsPerKm)
@@ -39,12 +41,18 @@ export function chartSeries(records: ActivityRecord[]) {
   }
   const reduced = ordered.filter((_, index) => indices.has(index))
   const pace = ordered.map((record, index) => {
-    if (record.speedMetersPerSecond !== null && record.speedMetersPerSecond > 0) return 1000 / record.speedMetersPerSecond
-    const previous = ordered[index - 1]
-    if (!previous || record.distanceMeters === null || previous.distanceMeters === null || record.elapsedSeconds === null || previous.elapsedSeconds === null) return null
-    const distance = record.distanceMeters - previous.distanceMeters
-    const elapsed = record.elapsedSeconds - previous.elapsedSeconds
-    return distance > 0 && elapsed > 0 ? 1000 * elapsed / distance : null
+    let secondsPerKm: number | null = null
+    if (record.speedMetersPerSecond !== null && Number.isFinite(record.speedMetersPerSecond) && record.speedMetersPerSecond > 0) {
+      secondsPerKm = 1000 / record.speedMetersPerSecond
+    } else {
+      const previous = ordered[index - 1]
+      if (previous && record.distanceMeters !== null && previous.distanceMeters !== null && record.elapsedSeconds !== null && previous.elapsedSeconds !== null) {
+        const distance = record.distanceMeters - previous.distanceMeters
+        const elapsed = record.elapsedSeconds - previous.elapsedSeconds
+        if (distance > 0 && elapsed > 0) secondsPerKm = 1000 * elapsed / distance
+      }
+    }
+    return secondsPerKm !== null && Number.isFinite(secondsPerKm) && secondsPerKm <= MAX_CHART_PACE_SECONDS_PER_KM ? secondsPerKm : null
   })
   const reducedPace = [...indices].sort((a, b) => a - b).map((index) => pace[index])
   return {

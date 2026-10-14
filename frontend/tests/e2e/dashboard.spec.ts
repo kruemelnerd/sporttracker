@@ -90,6 +90,7 @@ const detail = (id: number, withGps = false) => ({
   records: [
     { elapsedSeconds: 0, distanceMeters: 0, latitude: withGps ? 50 : null, longitude: withGps ? 8 : null, altitudeMeters: 100, speedMetersPerSecond: null, heartRate: 140, cadence: 82 },
     { elapsedSeconds: 900, distanceMeters: 2500, latitude: withGps ? 50.005 : null, longitude: withGps ? 8.005 : null, altitudeMeters: 110, speedMetersPerSecond: null, heartRate: 145, cadence: 84 },
+    { elapsedSeconds: 902.5302, distanceMeters: 2501, latitude: withGps ? 50.006 : null, longitude: withGps ? 8.006 : null, altitudeMeters: 111, speedMetersPerSecond: null, heartRate: 146, cadence: 84 },
     { elapsedSeconds: 1800, distanceMeters: 5000, latitude: withGps ? 50.01 : null, longitude: withGps ? 8.01 : null, altitudeMeters: 120, speedMetersPerSecond: null, heartRate: 150, cadence: 86 },
   ],
   laps: [{ lapNumber: 1, durationSeconds: 1800, distanceMeters: 5000, averageSpeedMetersPerSecond: null, averageHeartRate: 145, averageCadence: 84, ascentMeters: 20, descentMeters: 5 }],
@@ -110,7 +111,7 @@ test('direct activity URL loads detail with GPS map and recorded laps', async ({
   await expect(page.getByTestId('pace-chart')).toHaveAttribute('aria-label', 'Pace-Diagramm (2 Werte)')
   await expect(page.locator('[data-testid="heart-rate-chart"] canvas')).toHaveCount(1)
   await expect(page.locator('[data-testid="elevation-chart"] canvas')).toHaveCount(1)
-  await expect(page.getByTestId('elevation-chart')).toHaveAttribute('aria-label', 'Höhenprofil-Diagramm (3 Werte)')
+  await expect(page.getByTestId('elevation-chart')).toHaveAttribute('aria-label', 'Höhenprofil-Diagramm (4 Werte)')
 })
 
 test('unknown activity URL shows a clear not-found message', async ({ page }) => {

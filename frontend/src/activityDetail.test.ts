@@ -30,6 +30,19 @@ describe('activity detail formatting and chart preparation', () => {
     expect(series.pace).toEqual([[0, null], [1000, 300], [2000, 300]])
   })
 
+  it('drops stopped or implausibly slow pace points without affecting the other series', () => {
+    const series = chartSeries([
+      { elapsedSeconds: 0, distanceMeters: 0, latitude: null, longitude: null, altitudeMeters: 100, speedMetersPerSecond: null, heartRate: 140, cadence: 80 },
+      { elapsedSeconds: 253.02, distanceMeters: 100, latitude: null, longitude: null, altitudeMeters: 110, speedMetersPerSecond: null, heartRate: 145, cadence: 82 },
+      { elapsedSeconds: 373.02, distanceMeters: 200, latitude: null, longitude: null, altitudeMeters: 120, speedMetersPerSecond: null, heartRate: 150, cadence: 84 },
+      { elapsedSeconds: 493.02, distanceMeters: 300, latitude: null, longitude: null, altitudeMeters: 130, speedMetersPerSecond: 1000 / (42.17 * 60), heartRate: 155, cadence: 86 },
+    ])
+    expect(series.pace.map(([, pace]) => pace === null)).toEqual([true, true, false, true])
+    expect(series.pace[2][1]).toBeCloseTo(1200)
+    expect(series.heartRate).toEqual([[0, 140], [100, 145], [200, 150], [300, 155]])
+    expect(series.elevation).toEqual([[0, 100], [100, 110], [200, 120], [300, 130]])
+  })
+
   it('reduces large series deterministically and retains endpoints and alignment', () => {
     const records = Array.from({ length: 4000 }, (_, index) => ({ elapsedSeconds: index, distanceMeters: index, latitude: null, longitude: null, altitudeMeters: index, speedMetersPerSecond: 1, heartRate: index, cadence: index }))
     const series = chartSeries(records)
