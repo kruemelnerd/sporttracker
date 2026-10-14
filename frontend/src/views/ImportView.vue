@@ -37,7 +37,7 @@
           <strong class="file-name">{{ item.file.name }}</strong>
           <span class="queue-state">{{ item.state }}</span>
           <ImportOutcomeBadge v-if="isOutcome(item.state)" :status="item.state" />
-          <span class="queue-message">{{ item.message }}</span>
+          <span class="queue-message" :role="item.state === 'FAILED' || item.state === 'INVALID' ? 'alert' : 'status'">{{ item.message }}</span>
           <button v-if="item.state === 'FAILED'" class="retry-button" :data-testid="`retry-${item.file.name}`" type="button" @click="retry(item)">Erneut versuchen</button>
         </li>
       </ol>

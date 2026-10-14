@@ -71,6 +71,7 @@ describe('ImportView', () => {
 
     expect(wrapper.text()).toContain(status)
     expect(wrapper.get(`[data-testid="import-row-${status}.fit"]`).text()).toMatch(/Kein Lauftraining|Ungültige FIT-Datei|Import fehlgeschlagen/)
+    expect(wrapper.find(`[data-testid="import-row-${status}.fit"] [role="${status === 'SKIPPED_NON_RUN' ? 'status' : 'alert'}"]`).exists()).toBe(true)
   })
 
   it('keeps rows and shows typed batch-limit errors', async () => {

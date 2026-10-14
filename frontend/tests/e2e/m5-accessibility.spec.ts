@@ -87,7 +87,7 @@ test('keyboard navigation, import activation, error announcements and reduced mo
   await page.getByTestId('fit-drop-zone').focus()
   await page.getByTestId('fit-drop-zone').press('Enter')
   await (await chooserPromise).setFiles({ name: 'keyboard.fit', mimeType: 'application/octet-stream', buffer: Buffer.from([1]) })
-  await expect(page.getByRole('status')).toContainText('1 Datei ausgewählt')
+  await expect(page.getByTestId('selection-count')).toContainText('1 Datei ausgewählt')
 
   await page.route('**/api/activities?*', (route) => route.fulfill({ status: 500, body: 'error' }))
   await page.goto('/')
