@@ -1,12 +1,12 @@
 <template>
   <div class="metric-card" :class="{ 'is-emphasized': emphasis }">
     <dt>{{ label }}</dt>
-    <dd>{{ value }}</dd>
+    <dd :data-testid="valueTestId">{{ value }}</dd>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps<{ label: string; value: string; emphasis?: boolean }>()
+defineProps<{ label: string; value: string; emphasis?: boolean; valueTestId?: string }>()
 </script>
 
 <style scoped>

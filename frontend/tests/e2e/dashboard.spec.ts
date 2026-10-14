@@ -31,6 +31,21 @@ test('dashboard metrics are calculated from activity values', async ({ page }) =
   await expect(page.getByTestId('total-ascent')).toHaveText('200 m')
 })
 
+test('dashboard panels scan clearly on desktop and retain activity data on mobile', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openDashboard(page, [activity(21, 1, 9400, 3300, { averageHeartRate: 148, subSport: 'trail_run' })])
+  await expect(page.getByRole('heading', { name: 'Wochenvolumen' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Läufe pro Woche' })).toBeVisible()
+  await expect(page.getByTestId('week-bar-5')).toContainText('9.40 km')
+  await expect(page.getByTestId('activity-21')).toContainText('trail run')
+
+  await page.setViewportSize({ width: 375, height: 812 })
+  await expect(page.getByTestId('activity-21')).toContainText('9.40 km')
+  await expect(page.getByTestId('activity-21')).toContainText('5:51 min/km')
+  await expect(page.getByTestId('activity-21')).toContainText('148 bpm')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+})
+
 test('run list shows concrete values including pace and optional heart rate', async ({ page }) => {
   const run = activity(12, 1, 10000, 3600, { averageHeartRate: 150, subSport: 'trail' })
   await openDashboard(page, [run])
@@ -73,7 +88,7 @@ test('clicking a run from the dashboard navigates to its activity route', async 
   await page.getByTestId('activity-17').click()
 
   await expect(page).toHaveURL(/\/activities\/17$/)
-  await expect(page.locator('header')).toContainText('6:00 min/km')
+  await expect(page.locator('.detail > header')).toContainText('6:00 min/km')
   await expect(page.getByText('Für diesen Lauf sind keine GPS-Trackpunkte vorhanden.')).toBeVisible()
   await expect(page.getByTestId('pace-chart')).toBeVisible()
   await expect(page.getByTestId('heart-rate-chart')).toBeVisible()
@@ -100,7 +115,7 @@ test('direct activity URL loads detail with GPS map and recorded laps', async ({
   await page.route('https://tile.openstreetmap.org/**', (route) => route.abort())
   await page.route('**/api/activities/18', (route) => route.fulfill({ json: detail(18, true) }))
   await page.goto('/activities/18')
-  await expect(page.locator('header')).toContainText('5.00 km')
+  await expect(page.locator('.detail > header')).toContainText('5.00 km')
   await expect(page.getByTestId('heart-rate-chart')).toBeVisible()
   await expect(page.getByRole('table')).toContainText('5.00 km')
   await expect(page.getByRole('cell', { name: '6:00 min/km' })).toBeVisible()

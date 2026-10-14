@@ -19,6 +19,10 @@ describe('DashboardView', () => {
     expect(wrapper.get('[data-testid="average-pace"]').text()).toBe('6:00 min/km')
     expect(wrapper.get('[data-testid="total-ascent"]').text()).toBe('200 m')
     expect(wrapper.get('[data-testid="activity-12"]').attributes('href')).toBe('/activities/12')
+    expect(wrapper.findAll('.metric-card')).toHaveLength(6)
+    expect(wrapper.findAll('[data-testid^="week-bar-"]')).toHaveLength(6)
+    expect(wrapper.get('[data-testid="week-bar-5"]').text()).toContain('10.00 km')
+    expect(wrapper.get('[data-testid="activity-12"]').find('svg[aria-hidden="true"]').exists()).toBe(true)
   })
 
   it('shows a useful empty state without null-like values', async () => {
