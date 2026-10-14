@@ -88,10 +88,10 @@ const detail = (id: number, withGps = false) => ({
   averageCadence: 84,
   calories: 300,
   records: [
-    { elapsedSeconds: 0, distanceMeters: 0, latitude: withGps ? 50 : null, longitude: withGps ? 8 : null, altitudeMeters: 100, speedMetersPerSecond: null, heartRate: 140, cadence: 82 },
-    { elapsedSeconds: 900, distanceMeters: 2500, latitude: withGps ? 50.005 : null, longitude: withGps ? 8.005 : null, altitudeMeters: 110, speedMetersPerSecond: null, heartRate: 145, cadence: 84 },
-    { elapsedSeconds: 902.5302, distanceMeters: 2501, latitude: withGps ? 50.006 : null, longitude: withGps ? 8.006 : null, altitudeMeters: 111, speedMetersPerSecond: null, heartRate: 146, cadence: 84 },
-    { elapsedSeconds: 1800, distanceMeters: 5000, latitude: withGps ? 50.01 : null, longitude: withGps ? 8.01 : null, altitudeMeters: 120, speedMetersPerSecond: null, heartRate: 150, cadence: 86 },
+    { elapsedSeconds: 0, distanceMeters: 0, latitude: withGps ? 50 : null, longitude: withGps ? 8 : null, altitudeMeters: 100, speedMetersPerSecond: null, heartRate: 130, cadence: 70 },
+    { elapsedSeconds: 253.02, distanceMeters: 100, latitude: withGps ? 50.001 : null, longitude: withGps ? 8.001 : null, altitudeMeters: 101, speedMetersPerSecond: null, heartRate: 132, cadence: 72 },
+    { elapsedSeconds: 853.02, distanceMeters: 1600, latitude: withGps ? 50.005 : null, longitude: withGps ? 8.005 : null, altitudeMeters: 105, speedMetersPerSecond: null, heartRate: 145, cadence: 82 },
+    { elapsedSeconds: 1453.02, distanceMeters: 3100, latitude: withGps ? 50.008 : null, longitude: withGps ? 8.008 : null, altitudeMeters: 110, speedMetersPerSecond: null, heartRate: 150, cadence: 84 },
   ],
   laps: [{ lapNumber: 1, durationSeconds: 1800, distanceMeters: 5000, averageSpeedMetersPerSecond: null, averageHeartRate: 145, averageCadence: 84, ascentMeters: 20, descentMeters: 5 }],
 })

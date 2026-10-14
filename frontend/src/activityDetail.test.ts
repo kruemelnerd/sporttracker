@@ -44,6 +44,19 @@ describe('activity detail formatting and chart preparation', () => {
     expect(series.elevation).toEqual([[0, 100], [100, 110], [200, 120], [300, 130], [400, 140]])
   })
 
+  it('removes a very slow startup sample and keeps following running pace', () => {
+    const series = chartSeries([
+      { elapsedSeconds: 0, distanceMeters: 0, latitude: null, longitude: null, altitudeMeters: 100, speedMetersPerSecond: null, heartRate: 130, cadence: 70 },
+      { elapsedSeconds: 253.02, distanceMeters: 100, latitude: null, longitude: null, altitudeMeters: 101, speedMetersPerSecond: null, heartRate: 132, cadence: 72 },
+      { elapsedSeconds: 853.02, distanceMeters: 1600, latitude: null, longitude: null, altitudeMeters: 105, speedMetersPerSecond: null, heartRate: 145, cadence: 82 },
+      { elapsedSeconds: 1453.02, distanceMeters: 3100, latitude: null, longitude: null, altitudeMeters: 110, speedMetersPerSecond: null, heartRate: 150, cadence: 84 },
+    ])
+    expect(series.pace.map(([, pace]) => pace === null)).toEqual([true, true, false, false])
+    expect(series.pace[2][1]).toBeCloseTo(400)
+    expect(series.pace[3][1]).toBeCloseTo(400)
+    expect(series.heartRate.map(([, value]) => value)).toEqual([130, 132, 145, 150])
+  })
+
   it('reduces large series deterministically and retains endpoints and alignment', () => {
     const records = Array.from({ length: 4000 }, (_, index) => ({ elapsedSeconds: index, distanceMeters: index, latitude: null, longitude: null, altitudeMeters: index, speedMetersPerSecond: 1, heartRate: index, cadence: index }))
     const series = chartSeries(records)
