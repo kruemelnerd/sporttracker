@@ -61,12 +61,12 @@ Einmalig den Playwright-Browser installieren:
 cd frontend && npx playwright install --with-deps chromium
 ```
 
-Der vollständige lokale Smoke-Test startet Compose-PostgreSQL, wartet auf Health und Flyway, prüft Backend und Vite-Proxy und führt anschließend explizit Playwright aus:
+Der vollständige E2E-Test startet eine eigene PostgreSQL-Datenbank (`sporttracker-m4-e2e`, Port `55432`, eigenes Volume), dazu Backend (`18080`) und Vite (`15173`) aus diesem Checkout. Playwright verwendet ausschließlich diese Server; ein vorhandener Server wird nicht wiederverwendet. Das globale Setup leert die Anwendungstabellen nur nach einer Datenbank-/Benutzerprüfung auf `running_dashboard_e2e`:
 
 ```bash
 cd frontend && ./scripts/phase1-smoke.sh
 ```
 
-Das Skript beendet nur seine Backend-/Frontend-Prozesse. Das benannte PostgreSQL-Volume bleibt erhalten; `docker compose down -v` löscht es ausdrücklich.
+Die normale Entwicklungsdatenbank und deren Volume bleiben unberührt. E2E-Daten liegen ausschließlich im Volume `sporttracker-m4-e2e_sporttracker-m4-e2e-postgres`; zum Stoppen nur des E2E-Containers: `docker compose -p sporttracker-m4-e2e -f compose.e2e.yaml down`. Das Volume bleibt damit für weitere Läufe erhalten.
 
 Die Summary zeigt den dekodierten Lauf als `running` mit Status `decoded`, UTC-Startzeit, Distanz sowie positiven Record-/Lap-Zählungen. Upload, Persistenz, Dashboard, Karten, Charts und Analytics sind in dieser Phase nicht enthalten.

@@ -2,29 +2,12 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-BACKEND_PID=""
-FRONTEND_PID=""
-
-cleanup() {
-  [[ -z "$FRONTEND_PID" ]] || kill -- -"$FRONTEND_PID" 2>/dev/null || true
-  [[ -z "$BACKEND_PID" ]] || kill -- -"$BACKEND_PID" 2>/dev/null || true
-}
-trap cleanup EXIT
-
 cd "$ROOT_DIR"
-docker compose up -d db
-until [[ "$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps -q db)")" == healthy ]]; do
-  sleep 2
-done
 
-setsid bash -c 'cd backend && GRADLE_OPTS="${GRADLE_OPTS:-} -Djdk.lang.Process.launchMechanism=VFORK" exec ./gradlew --no-daemon bootRun' &
-BACKEND_PID=$!
-setsid bash -c 'cd frontend && exec npm run dev -- --host 127.0.0.1' &
-FRONTEND_PID=$!
-
-until curl --fail --silent http://127.0.0.1:8080/api/fixture-summary >/dev/null; do sleep 2; done
-until curl --fail --silent http://127.0.0.1:5173/ >/dev/null; do sleep 2; done
-docker compose exec -T db psql -U running_dashboard -d running_dashboard -c 'TRUNCATE activity, import_file, activity_record, lap RESTART IDENTITY CASCADE' >/dev/null
+docker compose -p sporttracker-m4-e2e -f compose.e2e.yaml up -d --wait --wait-timeout 90 db
+docker compose -p sporttracker-m4-e2e -f compose.e2e.yaml exec -T db \
+  psql -v ON_ERROR_STOP=1 -U running_dashboard_e2e -d running_dashboard_e2e \
+  -c "DO \$\$ BEGIN IF current_database() <> 'running_dashboard_e2e' OR current_user <> 'running_dashboard_e2e' THEN RAISE EXCEPTION 'Not the isolated E2E database'; END IF; END \$\$;"
 
 cd frontend
 npx playwright test --config=playwright.config.ts

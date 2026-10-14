@@ -129,12 +129,12 @@ public class ImportService {
         jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes) VALUES (?, ?, ?)", activityId, hash, sizeBytes);
         int index = 0;
         for (GarminFitFixtureAdapter.DecodedRecord record : decoded.records()) {
-            jdbc.update("INSERT INTO activity_record (activity_id, record_index, record_time, elapsed_seconds, distance_meters, latitude, longitude, altitude_meters, speed_mps, heart_rate, cadence) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    activityId, index++, record.timestamp() == null ? null : Timestamp.from(record.timestamp()), record.elapsedSeconds(), record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence());
+            jdbc.update("INSERT INTO activity_record (activity_id, record_index, record_time, elapsed_seconds, distance_meters, latitude, longitude, altitude_meters, speed_mps, heart_rate, cadence, descent_meters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    activityId, index++, record.timestamp() == null ? null : Timestamp.from(record.timestamp()), record.elapsedSeconds(), record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence(), record.descentMeters());
         }
         for (GarminFitFixtureAdapter.DecodedLap lap : decoded.laps()) {
-            jdbc.update("INSERT INTO lap (activity_id, lap_number, duration_seconds, distance_meters, average_speed_mps, average_heart_rate, average_cadence, ascent_meters) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    activityId, lap.lapNumber(), lap.durationSeconds(), lap.distanceMeters(), lap.averageSpeedMetersPerSecond(), lap.averageHeartRate(), lap.averageCadence(), lap.ascentMeters());
+            jdbc.update("INSERT INTO lap (activity_id, lap_number, duration_seconds, distance_meters, average_speed_mps, average_heart_rate, average_cadence, ascent_meters, descent_meters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    activityId, lap.lapNumber(), lap.durationSeconds(), lap.distanceMeters(), lap.averageSpeedMetersPerSecond(), lap.averageHeartRate(), lap.averageCadence(), lap.ascentMeters(), lap.descentMeters());
         }
         return activityId;
     }

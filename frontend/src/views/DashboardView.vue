@@ -50,6 +50,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { getActivities } from '../api'
+import { RouterLink } from 'vue-router'
 import { sixWeekStart, summarizeActivities, type Activity } from '../dashboard'
 
 const loading = ref(true)

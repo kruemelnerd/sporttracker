@@ -62,12 +62,12 @@ public class GarminFitFixtureAdapter {
 
     public record DecodedRecord(Instant timestamp, Double elapsedSeconds, Double distanceMeters, Double latitude,
                                 Double longitude, Double altitudeMeters, Double speedMetersPerSecond,
-                                Integer heartRate, Integer cadence) {
+                                Integer heartRate, Integer cadence, Double descentMeters) {
     }
 
     public record DecodedLap(int lapNumber, Double durationSeconds, Double distanceMeters,
                              Double averageSpeedMetersPerSecond, Integer averageHeartRate,
-                             Integer averageCadence, Double ascentMeters) {
+                             Integer averageCadence, Double ascentMeters, Double descentMeters) {
     }
 
     private static final class Listener implements ActivityMesgListener, RecordMesgListener, LapMesgListener, SessionMesgListener {
@@ -82,21 +82,21 @@ public class GarminFitFixtureAdapter {
             Instant timestamp = instant(mesg.getTimestamp());
             records.add(new DecodedRecord(timestamp, null, doubleValue(mesg.getDistance()), degrees(mesg.getPositionLat(), true),
                     degrees(mesg.getPositionLong(), false), doubleValue(mesg.getAltitude()), doubleValue(mesg.getSpeed()),
-                    integerValue(mesg.getHeartRate()), integerValue(mesg.getCadence())));
+                    integerValue(mesg.getHeartRate()), integerValue(mesg.getCadence()), null));
         }
 
         @Override
         public void onMesg(LapMesg mesg) {
             laps.add(new DecodedLap(laps.size() + 1, doubleValue(mesg.getTotalElapsedTime()), doubleValue(mesg.getTotalDistance()),
                     doubleValue(mesg.getAvgSpeed()), integerValue(mesg.getAvgHeartRate()), integerValue(mesg.getAvgCadence()),
-                    doubleValue(mesg.getTotalAscent())));
+                    doubleValue(mesg.getTotalAscent()), doubleValue(mesg.getTotalDescent())));
         }
 
         @Override
         public void onMesg(SessionMesg mesg) {
             sessions.add(new DecodedActivity(stringValue(mesg.getSport()), stringValue(mesg.getSubSport()), instant(mesg.getStartTime()),
                     doubleValue(mesg.getTotalElapsedTime()), doubleValue(mesg.getTotalTimerTime()), doubleValue(mesg.getTotalDistance()),
-                    doubleValue(mesg.getAvgSpeed()), integerValue(mesg.getAvgHeartRate()), integerValue(mesg.getMaxHeartRate()), integerValue(mesg.getAvgCadence()),
+                    doubleValue(mesg.getAvgSpeed()), integerValue(mesg.getAvgHeartRate()), integerValue(mesg.getMaxHeartRate()), integerValue(mesg.getAvgRunningCadence() != null ? mesg.getAvgRunningCadence() : mesg.getAvgCadence()),
                     doubleValue(mesg.getTotalAscent()), integerValue(mesg.getTotalCalories()), List.of(), List.of()));
         }
 
@@ -107,9 +107,16 @@ public class GarminFitFixtureAdapter {
             List<DecodedRecord> ordered = new ArrayList<>(records.size());
             for (DecodedRecord record : records) {
                 Double elapsed = record.timestamp() == null ? null : (double) (record.timestamp().toEpochMilli() - session.startTime().toEpochMilli()) / 1000d;
-                ordered.add(new DecodedRecord(record.timestamp(), elapsed, record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence()));
+                ordered.add(new DecodedRecord(record.timestamp(), elapsed, record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence(), null));
             }
             ordered.sort(Comparator.comparing(DecodedRecord::timestamp, Comparator.nullsLast(Comparator.naturalOrder())));
+            Double previousAltitude = null;
+            for (int index = 0; index < ordered.size(); index++) {
+                DecodedRecord record = ordered.get(index);
+                Double descent = record.altitudeMeters() == null || previousAltitude == null ? null : Math.max(0, previousAltitude - record.altitudeMeters());
+                previousAltitude = record.altitudeMeters();
+                ordered.set(index, new DecodedRecord(record.timestamp(), record.elapsedSeconds(), record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence(), descent));
+            }
             return new DecodedActivity(session.sport(), session.subSport(), session.startTime(), session.elapsedSeconds(), session.movingSeconds(),
                     session.distanceMeters(), session.averageSpeedMetersPerSecond(), session.averageHeartRate(), session.maximumHeartRate(), session.averageCadence(), session.ascentMeters(),
                     session.calories(), List.copyOf(ordered), List.copyOf(laps));

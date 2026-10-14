@@ -66,11 +66,53 @@ test('weekly buckets show correct run counts, distances and times', async ({ pag
 })
 
 test('clicking a run from the dashboard navigates to its activity route', async ({ page }) => {
-  await openDashboard(page, [activity(17, 1, 10000, 3600)])
+  await page.route('**/api/activities?*', (route) => route.fulfill({ json: [activity(17, 1, 10000, 3600)] }))
+  await page.route('**/api/activities/17', (route) => route.fulfill({ json: detail(17) }))
+  await page.goto('/')
+  await expect(page.getByRole('heading', { name: 'Letzte sechs Wochen' })).toBeVisible()
   await page.getByTestId('activity-17').click()
 
   await expect(page).toHaveURL(/\/activities\/17$/)
-  await expect(page.getByText(/Lauf 17/)).toBeVisible()
+  await expect(page.locator('header')).toContainText('6:00 min/km')
+  await expect(page.getByText('Für diesen Lauf sind keine GPS-Trackpunkte vorhanden.')).toBeVisible()
+  await expect(page.getByTestId('pace-chart')).toBeVisible()
+  await expect(page.getByTestId('heart-rate-chart')).toBeVisible()
+  await expect(page.getByRole('link', { name: /Zurück zum Dashboard/ })).toBeVisible()
+})
+
+const detail = (id: number, withGps = false) => ({
+  activity: { ...activity(id, 1, 5000, 1800), averageHeartRate: 145, ascentMeters: 20 },
+  movingSeconds: 1700,
+  averageSpeedMetersPerSecond: 2.78,
+  maximumHeartRate: 160,
+  averageCadence: 84,
+  calories: 300,
+  records: [
+    { elapsedSeconds: 0, distanceMeters: 0, latitude: withGps ? 50 : null, longitude: withGps ? 8 : null, altitudeMeters: 100, speedMetersPerSecond: 2.7, heartRate: 140, cadence: 82 },
+    { elapsedSeconds: 1800, distanceMeters: 5000, latitude: withGps ? 50.01 : null, longitude: withGps ? 8.01 : null, altitudeMeters: 120, speedMetersPerSecond: 2.8, heartRate: 150, cadence: 86 },
+  ],
+  laps: [{ lapNumber: 1, durationSeconds: 1800, distanceMeters: 5000, averageSpeedMetersPerSecond: 2.78, averageHeartRate: 145, averageCadence: 84, ascentMeters: 20, descentMeters: 5 }],
+})
+
+test('direct activity URL loads detail with GPS map and recorded laps', async ({ page }) => {
+  await page.route('https://tile.openstreetmap.org/**', (route) => route.abort())
+  await page.route('**/api/activities/18', (route) => route.fulfill({ json: detail(18, true) }))
+  await page.goto('/activities/18')
+  await expect(page.locator('header')).toContainText('5.00 km')
+  await expect(page.getByTestId('heart-rate-chart')).toBeVisible()
+  await expect(page.getByRole('table')).toContainText('5.00 km')
+  await expect(page.getByText('Für diesen Lauf sind keine GPS-Trackpunkte vorhanden.')).toHaveCount(0)
+  await expect(page.locator('.leaflet-container')).toBeVisible()
+  await expect(page.locator('.leaflet-overlay-pane path')).toHaveCount(1)
+  await expect(page.locator('[data-testid="pace-chart"] canvas')).toHaveCount(1)
+  await expect(page.locator('[data-testid="heart-rate-chart"] canvas')).toHaveCount(1)
+  await expect(page.locator('[data-testid="elevation-chart"] canvas')).toHaveCount(1)
+})
+
+test('unknown activity URL shows a clear not-found message', async ({ page }) => {
+  await page.route('**/api/activities/999', (route) => route.fulfill({ status: 404, json: { status: 404 } }))
+  await page.goto('/activities/999')
+  await expect(page.getByRole('alert')).toHaveText('Lauf nicht gefunden.')
 })
 
 test('empty data shows an empty state without invalid values', async ({ page }) => {

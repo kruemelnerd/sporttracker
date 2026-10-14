@@ -86,9 +86,22 @@ class ImportControllerTests {
 
         mockMvc.perform(get("/api/activities").param("from", "2024-01-01T12:00:00Z"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].id").value(activityId))
-                .andExpect(jsonPath("$[0].sport").value("running"))
-                .andExpect(jsonPath("$[0].distanceMeters").value(5000d));
+                .andExpect(jsonPath("$[?(@.id == " + activityId + ")].sport").value(org.hamcrest.Matchers.contains("running")))
+                .andExpect(jsonPath("$[?(@.id == " + activityId + ")].distanceMeters").value(org.hamcrest.Matchers.contains(5000d)));
+
+        mockMvc.perform(get("/api/activities/{id}", activityId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.activity.distanceMeters").value(5000d))
+                .andExpect(jsonPath("$.records.length()").value(2))
+                .andExpect(jsonPath("$.records[0].heartRate").value(140))
+                .andExpect(jsonPath("$.records[0].elapsedSeconds").value(0d))
+                .andExpect(jsonPath("$.laps.length()").value(1));
+    }
+
+    @Test
+    void unknownActivityDetailReturnsNotFound() throws Exception {
+        mockMvc.perform(get("/api/activities/999999999"))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -170,7 +183,7 @@ class ImportControllerTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.outcomes").isEmpty())
                 .andExpect(jsonPath("$.batchError.code").value("BATCH_COUNT_EXCEEDED"));
-        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM import_file WHERE sha256 <> ?", Integer.class, FIXTURE_HASH));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM import_file WHERE sha256 IN (?, ?)", Integer.class, FIXTURE_HASH, SECOND_FIXTURE_HASH));
     }
 
     @Test

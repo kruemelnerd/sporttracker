@@ -1,0 +1,2 @@
+ALTER TABLE activity_record ADD COLUMN descent_meters DOUBLE PRECISION;
+ALTER TABLE lap ADD COLUMN descent_meters DOUBLE PRECISION;

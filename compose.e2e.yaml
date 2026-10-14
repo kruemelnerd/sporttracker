@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: running_dashboard_e2e
+      POSTGRES_USER: running_dashboard_e2e
+      POSTGRES_PASSWORD: running_dashboard_e2e
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - sporttracker-m4-e2e-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U running_dashboard_e2e -d running_dashboard_e2e"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  sporttracker-m4-e2e-postgres:

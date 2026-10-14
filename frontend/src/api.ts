@@ -22,6 +22,39 @@ export type Activity = {
   ascentMeters: number | null
 }
 
+export type ActivityRecord = {
+  elapsedSeconds: number | null
+  distanceMeters: number | null
+  latitude: number | null
+  longitude: number | null
+  altitudeMeters: number | null
+  speedMetersPerSecond: number | null
+  heartRate: number | null
+  cadence: number | null
+}
+
+export type Lap = {
+  lapNumber: number
+  durationSeconds: number | null
+  distanceMeters: number | null
+  averageSpeedMetersPerSecond: number | null
+  averageHeartRate: number | null
+  averageCadence: number | null
+  ascentMeters: number | null
+  descentMeters: number | null
+}
+
+export type ActivityDetail = {
+  activity: Activity
+  movingSeconds: number | null
+  averageSpeedMetersPerSecond: number | null
+  maximumHeartRate: number | null
+  averageCadence: number | null
+  calories: number | null
+  records: ActivityRecord[]
+  laps: Lap[]
+}
+
 export type ImportOutcome = {
   status: 'IMPORTED' | 'DUPLICATE' | 'SKIPPED_NON_RUN' | 'INVALID' | 'FAILED'
   activityId: number | null
@@ -55,6 +88,13 @@ export async function getActivities(from: string): Promise<Activity[]> {
   const response = await fetch(`/api/activities?from=${encodeURIComponent(from)}`)
   if (!response.ok) throw new Error(`Activities request failed: ${response.status}`)
   return response.json() as Promise<Activity[]>
+}
+
+export async function getActivity(id: string): Promise<ActivityDetail> {
+  const response = await fetch(`/api/activities/${encodeURIComponent(id)}`)
+  if (response.status === 404) throw new Error('Lauf nicht gefunden.')
+  if (!response.ok) throw new Error(`Laufdetails konnten nicht geladen werden: ${response.status}`)
+  return response.json() as Promise<ActivityDetail>
 }
 
 export async function importFits(files: File[]): Promise<ImportResponse> {
