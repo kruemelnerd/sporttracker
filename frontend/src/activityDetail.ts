@@ -1,6 +1,6 @@
 import type { ActivityRecord, Lap } from './api'
 
-const MAX_CHART_PACE_SECONDS_PER_KM = 20 * 60
+const MAX_CHART_PACE_SECONDS_PER_KM = 17 * 60
 
 export function formatPace(secondsPerKm: number | null): string {
   if (secondsPerKm === null || !Number.isFinite(secondsPerKm) || secondsPerKm <= 0) return '–'
