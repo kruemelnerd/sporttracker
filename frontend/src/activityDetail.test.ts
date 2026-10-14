@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chartSeries, descendedMeters, displayCadence, formatPace, lapRows, paceAxis } from './activityDetail'
+import { chartSeries, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis } from './activityDetail'
 
 describe('activity detail formatting and chart preparation', () => {
   it('formats pace and leaves unavailable or invalid values blank', () => {
@@ -48,6 +48,11 @@ describe('activity detail formatting and chart preparation', () => {
     expect(lapRows([{ lapNumber: 1, distanceMeters: 2000, durationSeconds: 600, averageSpeedMetersPerSecond: 3.33, averageHeartRate: null, averageCadence: null, ascentMeters: null, descentMeters: null }], records)[0].source).toBe('recorded')
     expect(lapRows([], records).map((row) => row.distanceMeters)).toEqual([1000, 1000])
     expect(lapRows([], [{ ...records[0], distanceMeters: null }, records[1]])).toEqual([])
+  })
+
+  it('calculates recorded lap pace from distance and duration when average speed is missing', () => {
+    expect(lapPaceSecondsPerKm({ distanceMeters: 5000, durationSeconds: 1800, averageSpeedMetersPerSecond: null })).toBe(360)
+    expect(lapPaceSecondsPerKm({ distanceMeters: null, durationSeconds: 1800, averageSpeedMetersPerSecond: null })).toBeNull()
   })
 
   it('derives descent only across consecutive available altitude measurements', () => {

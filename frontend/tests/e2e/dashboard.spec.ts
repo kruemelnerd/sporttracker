@@ -92,7 +92,7 @@ const detail = (id: number, withGps = false) => ({
     { elapsedSeconds: 900, distanceMeters: 2500, latitude: withGps ? 50.005 : null, longitude: withGps ? 8.005 : null, altitudeMeters: 110, speedMetersPerSecond: null, heartRate: 145, cadence: 84 },
     { elapsedSeconds: 1800, distanceMeters: 5000, latitude: withGps ? 50.01 : null, longitude: withGps ? 8.01 : null, altitudeMeters: 120, speedMetersPerSecond: null, heartRate: 150, cadence: 86 },
   ],
-  laps: [{ lapNumber: 1, durationSeconds: 1800, distanceMeters: 5000, averageSpeedMetersPerSecond: 2.78, averageHeartRate: 145, averageCadence: 84, ascentMeters: 20, descentMeters: 5 }],
+  laps: [{ lapNumber: 1, durationSeconds: 1800, distanceMeters: 5000, averageSpeedMetersPerSecond: null, averageHeartRate: 145, averageCadence: 84, ascentMeters: 20, descentMeters: 5 }],
 })
 
 test('direct activity URL loads detail with GPS map and recorded laps', async ({ page }) => {
@@ -102,6 +102,7 @@ test('direct activity URL loads detail with GPS map and recorded laps', async ({
   await expect(page.locator('header')).toContainText('5.00 km')
   await expect(page.getByTestId('heart-rate-chart')).toBeVisible()
   await expect(page.getByRole('table')).toContainText('5.00 km')
+  await expect(page.getByRole('cell', { name: '6:00 min/km' })).toBeVisible()
   await expect(page.getByText('Für diesen Lauf sind keine GPS-Trackpunkte vorhanden.')).toHaveCount(0)
   await expect(page.locator('.leaflet-container')).toBeVisible()
   await expect(page.locator('.leaflet-overlay-pane path')).toHaveCount(1)

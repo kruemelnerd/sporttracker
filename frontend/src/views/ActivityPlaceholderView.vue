@@ -44,7 +44,7 @@
             <tbody><tr v-for="lap in laps" :key="lap.lapNumber">
               <td>{{ lap.lapNumber }} <small v-if="lap.source === 'derived'">(abgeleitet)</small></td>
               <td>{{ distance(lap.distanceMeters) }}</td><td>{{ duration(lap.durationSeconds) }}</td>
-              <td>{{ formatPace(lap.averageSpeedMetersPerSecond && lap.averageSpeedMetersPerSecond > 0 ? 1000 / lap.averageSpeedMetersPerSecond : null) }}</td>
+              <td>{{ formatPace(lapPaceSecondsPerKm(lap)) }}</td>
               <td>{{ bpm(lap.averageHeartRate) }}</td><td>{{ meters(lap.ascentMeters) }} / {{ meters(lap.descentMeters) }}</td><td>{{ displayCadence(lap.averageCadence) }}</td>
             </tr></tbody>
           </table>
@@ -64,7 +64,7 @@ import { LineChart } from 'echarts/charts'
 import { DataZoomComponent, GridComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { getActivity, type ActivityDetail } from '../api'
-import { chartSeries, descendedMeters, displayCadence, formatPace, lapRows, paceAxis } from '../activityDetail'
+import { chartSeries, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis } from '../activityDetail'
 
 echartsUse([LineChart, DataZoomComponent, GridComponent, TitleComponent, TooltipComponent, CanvasRenderer])
 

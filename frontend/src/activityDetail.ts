@@ -57,6 +57,13 @@ export function chartSeries(records: ActivityRecord[]) {
 
 export type LapRow = Lap & { source: 'recorded' | 'derived' }
 
+export function lapPaceSecondsPerKm(lap: Pick<Lap, 'distanceMeters' | 'durationSeconds' | 'averageSpeedMetersPerSecond'>): number | null {
+  if (lap.averageSpeedMetersPerSecond !== null && Number.isFinite(lap.averageSpeedMetersPerSecond) && lap.averageSpeedMetersPerSecond > 0) return 1000 / lap.averageSpeedMetersPerSecond
+  return lap.distanceMeters !== null && lap.durationSeconds !== null && Number.isFinite(lap.distanceMeters) && Number.isFinite(lap.durationSeconds) && lap.distanceMeters > 0 && lap.durationSeconds > 0
+    ? 1000 * lap.durationSeconds / lap.distanceMeters
+    : null
+}
+
 export function lapRows(laps: Lap[], records: ActivityRecord[]): LapRow[] {
   if (laps.length) return laps.map((lap) => ({ ...lap, source: 'recorded' }))
   if (records.length < 2 || records.some((record) => record.distanceMeters === null || record.elapsedSeconds === null)) return []
