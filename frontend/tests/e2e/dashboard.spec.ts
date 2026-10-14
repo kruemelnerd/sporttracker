@@ -129,6 +129,27 @@ test('direct activity URL loads detail with GPS map and recorded laps', async ({
   await expect(page.getByTestId('elevation-chart')).toHaveAttribute('aria-label', 'Höhenprofil-Diagramm (4 Werte)')
 })
 
+test('activity detail retains map, charts and labelled laps across mobile and tablet widths', async ({ page }) => {
+  await page.route('https://tile.openstreetmap.org/**', (route) => route.abort())
+  await page.route('**/api/activities/22', (route) => route.fulfill({ json: detail(22, true) }))
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/activities/22')
+  await expect(page.locator('.leaflet-container')).toBeVisible()
+  await expect(page.getByTestId('pace-chart')).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Rundentabelle; horizontal scrollbar auf kleinen Bildschirmen' })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+  const mobileChartWidths = await page.getByTestId('pace-chart').evaluate((element) => [element.clientWidth, element.querySelector('canvas')?.clientWidth ?? 0])
+  expect(Math.abs(mobileChartWidths[0] - mobileChartWidths[1])).toBeLessThanOrEqual(1)
+
+  await page.setViewportSize({ width: 1024, height: 900 })
+  await expect(page.locator('.leaflet-container')).toBeVisible()
+  await expect(page.getByTestId('heart-rate-chart')).toBeVisible()
+  await expect(page.getByRole('table')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024)
+  const tabletChartWidths = await page.getByTestId('pace-chart').evaluate((element) => [element.clientWidth, element.querySelector('canvas')?.clientWidth ?? 0])
+  expect(Math.abs(tabletChartWidths[0] - tabletChartWidths[1])).toBeLessThanOrEqual(1)
+})
+
 test('unknown activity URL shows a clear not-found message', async ({ page }) => {
   await page.route('**/api/activities/999', (route) => route.fulfill({ status: 404, json: { status: 404 } }))
   await page.goto('/activities/999')

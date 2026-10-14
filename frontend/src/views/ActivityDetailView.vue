@@ -1,44 +1,44 @@
 <template>
   <section class="detail">
-    <RouterLink to="/">← Zurück zum Dashboard</RouterLink>
+    <RouterLink class="back-link" to="/">← Zurück zum Dashboard</RouterLink>
     <p v-if="loading" role="status">Laufdetails werden geladen …</p>
     <p v-else-if="error" role="alert">{{ error }}</p>
     <template v-if="detail && !loading && !error">
-      <header>
-        <h2>{{ date(detail.activity.startTime) }}</h2>
-        <p>{{ distance(detail.activity.distanceMeters) }} · {{ duration(detail.activity.elapsedSeconds) }} · {{ paceForRun }}</p>
+      <header class="detail-heading">
+        <h1>{{ date(detail.activity.startTime) }}</h1>
+        <p class="activity-summary"><strong>{{ distance(detail.activity.distanceMeters) }}</strong> · {{ duration(detail.activity.elapsedSeconds) }} · {{ paceForRun }}</p>
       </header>
-      <dl class="metrics">
-        <div><dt>Ø Herzfrequenz</dt><dd>{{ bpm(detail.activity.averageHeartRate) }}</dd></div>
-        <div><dt>Max. Herzfrequenz</dt><dd>{{ bpm(detail.maximumHeartRate) }}</dd></div>
-        <div><dt>Höhenmeter bergauf</dt><dd>{{ meters(detail.activity.ascentMeters) }}</dd></div>
-        <div><dt>Höhenmeter bergab</dt><dd>{{ meters(descent) }}</dd></div>
-        <div><dt>Ø Kadenz</dt><dd>{{ displayCadence(detail.averageCadence) }}</dd></div>
-        <div><dt>Bewegungszeit</dt><dd>{{ duration(detail.movingSeconds) }}</dd></div>
-        <div><dt>Kalorien</dt><dd>{{ detail.calories === null ? '–' : `${detail.calories} kcal` }}</dd></div>
+      <dl class="metrics" aria-label="Laufkennzahlen">
+        <MetricCard label="Ø Herzfrequenz" :value="bpm(detail.activity.averageHeartRate)" />
+        <MetricCard label="Max. Herzfrequenz" :value="bpm(detail.maximumHeartRate)" />
+        <MetricCard label="Höhenmeter bergauf" :value="meters(detail.activity.ascentMeters)" />
+        <MetricCard label="Höhenmeter bergab" :value="meters(descent)" />
+        <MetricCard label="Ø Kadenz" :value="displayCadence(detail.averageCadence)" />
+        <MetricCard label="Bewegungszeit" :value="duration(detail.movingSeconds)" />
+        <MetricCard label="Kalorien" :value="detail.calories === null ? '–' : `${detail.calories} kcal`" />
       </dl>
 
-      <section aria-labelledby="map-heading">
-        <h3 id="map-heading">Laufstrecke</h3>
+      <section class="detail-panel" aria-labelledby="map-heading">
+        <h2 id="map-heading">Laufstrecke</h2>
         <div v-if="routeVisible" ref="mapElement" class="map" aria-label="Karte mit GPS-Track"></div>
         <p v-if="!routeVisible">Für diesen Lauf sind keine GPS-Trackpunkte vorhanden.</p>
       </section>
 
-      <section aria-labelledby="charts-heading">
-        <h3 id="charts-heading">Trainingsverlauf</h3>
+      <section class="detail-panel" aria-labelledby="charts-heading">
+        <h2 id="charts-heading">Trainingsverlauf</h2>
         <p v-if="!charts.pace.length">Für diesen Lauf sind keine Messpunkte vorhanden.</p>
         <div v-else class="charts">
-          <div ref="paceElement" class="chart" data-testid="pace-chart" :aria-label="`Pace-Diagramm (${charts.pace.filter(([, value]) => value !== null).length} Werte)`"></div>
-          <div ref="heartElement" class="chart" data-testid="heart-rate-chart" aria-label="Herzfrequenz-Diagramm"></div>
-          <div ref="elevationElement" class="chart" data-testid="elevation-chart" :aria-label="`Höhenprofil-Diagramm (${charts.elevation.filter(([, value]) => value !== null).length} Werte)`"></div>
-          <div v-if="charts.cadence.some((point) => point[1] !== null)" ref="cadenceElement" class="chart" aria-label="Kadenz-Diagramm"></div>
+          <div ref="paceElement" class="chart" data-testid="pace-chart" role="img" :aria-label="`Pace-Diagramm (${charts.pace.filter(([, value]) => value !== null).length} Werte)`"></div>
+          <div ref="heartElement" class="chart" data-testid="heart-rate-chart" role="img" aria-label="Herzfrequenz-Diagramm"></div>
+          <div ref="elevationElement" class="chart" data-testid="elevation-chart" role="img" :aria-label="`Höhenprofil-Diagramm (${charts.elevation.filter(([, value]) => value !== null).length} Werte)`"></div>
+          <div v-if="charts.cadence.some((point) => point[1] !== null)" ref="cadenceElement" class="chart" role="img" aria-label="Kadenz-Diagramm"></div>
         </div>
       </section>
 
-      <section aria-labelledby="laps-heading">
-        <h3 id="laps-heading">Runden</h3>
+      <section class="detail-panel" aria-labelledby="laps-heading">
+        <h2 id="laps-heading">Runden</h2>
         <p v-if="!laps.length">Für diesen Lauf sind keine Runden oder zuverlässig ableitbaren Kilometer-Splits vorhanden.</p>
-        <div v-else class="table-wrap">
+        <div v-else class="table-wrap" role="region" aria-label="Rundentabelle; horizontal scrollbar auf kleinen Bildschirmen" tabindex="0">
           <table>
             <thead><tr><th>Runde</th><th>Distanz</th><th>Dauer</th><th>Ø Pace</th><th>Ø HF</th><th>Höhenmeter +/−</th><th>Ø Kadenz</th></tr></thead>
             <tbody><tr v-for="lap in laps" :key="lap.lapNumber">
@@ -65,6 +65,7 @@ import { DataZoomComponent, GridComponent, TitleComponent, TooltipComponent } fr
 import { CanvasRenderer } from 'echarts/renderers'
 import { getActivity, type ActivityDetail } from '../api'
 import { chartSeries, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis } from '../activityDetail'
+import MetricCard from '../components/MetricCard.vue'
 
 echartsUse([LineChart, DataZoomComponent, GridComponent, TitleComponent, TooltipComponent, CanvasRenderer])
 
@@ -79,6 +80,7 @@ const elevationElement = ref<HTMLElement | null>(null)
 const cadenceElement = ref<HTMLElement | null>(null)
 let map: ReturnType<typeof L.map> | null = null
 let chartInstances: ECharts[] = []
+let chartResizeObserver: ResizeObserver | null = null
 let requestId = 0
 
 const routePoints = computed(() => (detail.value?.records ?? []).filter((record) => record.latitude !== null && record.longitude !== null))
@@ -129,6 +131,11 @@ async function loadActivity(id: string) {
       chartInstances = [makeChart(paceElement.value, 'Pace', charts.value.pace, 'min/km', true), makeChart(heartElement.value, 'Herzfrequenz', charts.value.heartRate, 'bpm'), makeChart(elevationElement.value, 'Höhenprofil', charts.value.elevation, 'm')]
       if (charts.value.cadence.some((point) => point[1] !== null) && cadenceElement.value) chartInstances.push(makeChart(cadenceElement.value, 'Kadenz', charts.value.cadence.map(([distance, value]) => [distance, value === null ? null : value * 2]), 'steps/min'))
       connect(chartInstances)
+      chartResizeObserver = new ResizeObserver((entries) => {
+        const changedElements = new Set(entries.map(({ target }) => target))
+        chartInstances.filter((chart) => changedElements.has(chart.getDom())).forEach((chart) => chart.resize())
+      })
+      chartInstances.forEach((chart) => chartResizeObserver?.observe(chart.getDom()))
     }
   } catch (requestError) {
     if (currentRequest !== requestId) return
@@ -157,6 +164,8 @@ function makeChart(element: HTMLElement, name: string, data: [number, number | n
 }
 
 function disposeVisuals() {
+  chartResizeObserver?.disconnect()
+  chartResizeObserver = null
   map?.remove()
   map = null
   chartInstances.forEach((chart) => chart.dispose())
@@ -171,16 +180,26 @@ onUnmounted(() => { requestId++; disposeVisuals() })
 </script>
 
 <style scoped>
-.detail { max-width: 72rem; margin: 0 auto; padding: 1rem; }
-.metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; }
-.metrics div { border: 1px solid #d8dde3; border-radius: .5rem; padding: .75rem; }
-.metrics dt { color: #53606d; font-size: .9rem; }
-.metrics dd { font-size: 1.2rem; font-weight: 650; margin: .25rem 0 0; }
-.map { height: 24rem; width: 100%; border-radius: .5rem; }
-.charts { display: grid; grid-template-columns: 1fr; gap: .5rem; }
-.chart { width: 100%; height: 17rem; }
-.table-wrap { overflow-x: auto; }
+.detail { display: grid; gap: 1.5rem; min-width: 0; }
+.back-link { min-height: 44px; display: inline-flex; align-items: center; width: fit-content; }
+.detail-heading h1 { margin: 0; color: var(--color-ink); font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.2; }
+.activity-summary { margin: .5rem 0 0; color: var(--color-muted); }
+.activity-summary strong { color: var(--color-ink); font-size: 1.125rem; }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin: 0; }
+.detail-panel { min-width: 0; padding: 1.25rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); }
+.detail-panel h2 { margin: 0 0 1rem; color: var(--color-ink); font-size: 1.125rem; }
+.map { width: 100%; min-height: 24rem; border-radius: var(--radius-control); }
+.charts { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+.chart { width: 100%; min-width: 0; height: 17rem; }
+.table-wrap { max-width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
-th, td { padding: .6rem; text-align: left; border-bottom: 1px solid #d8dde3; white-space: nowrap; }
-@media (max-width: 600px) { .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .map { height: 18rem; } .chart { height: 15rem; } }
+th, td { padding: .75rem; text-align: left; border-bottom: 1px solid var(--color-border); white-space: nowrap; }
+th { color: var(--color-muted); font-size: .8125rem; }
+@media (min-width: 1024px) { .metrics { grid-template-columns: repeat(7, minmax(0, 1fr)); } }
+@media (max-width: 767px) {
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .detail-panel { padding: 1rem; }
+  .map { min-height: 18rem; }
+  .chart { height: 15rem; }
+}
 </style>
