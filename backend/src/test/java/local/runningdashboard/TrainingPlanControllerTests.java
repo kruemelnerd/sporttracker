@@ -84,6 +84,10 @@ class TrainingPlanControllerTests {
                 {"date":"2027-03-15","sport":"RUN","sessionType":"EASY","title":"Ungültig","targetRpe":11,"targetPaceFrom":6,"targetPaceTo":5}
                 """))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isNotEmpty());
+        mvc.perform(post("/api/training-plans/{id}/sessions", planId).contentType(MediaType.APPLICATION_JSON).content("""
+                {"date":"2027-03-15","sport":null,"sessionType":"EASY","title":"Sport fehlt"}
+                """))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isNotEmpty());
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM planned_session WHERE training_plan_id = ?", Integer.class, java.util.UUID.fromString(planId)));
     }
 }

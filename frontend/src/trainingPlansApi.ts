@@ -38,6 +38,13 @@ export type PlannedSession = {
 }
 
 export type TrainingPlan = TrainingPlanSummary & { phases: TrainingPhase[]; sessions: PlannedSession[] }
+export type TrainingPlanImportResult = { plan: TrainingPlan; replacedExisting: boolean }
+
+export class TrainingPlanApiError extends Error {
+  constructor(message: string, readonly status: number, readonly code: string | null) {
+    super(message)
+  }
+}
 export type PlanInput = Omit<TrainingPlanSummary, 'id'>
 export type PhaseInput = Omit<TrainingPhase, 'id' | 'trainingPlanId'> & { id?: string }
 export type SessionInput = Omit<PlannedSession, 'id' | 'trainingPlanId'>
@@ -45,8 +52,8 @@ export type SessionInput = Omit<PlannedSession, 'id' | 'trainingPlanId'>
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
   if (!response.ok) {
-    const problem = await response.json().catch(() => null) as { message?: string } | null
-    throw new Error(problem?.message ?? `Anfrage fehlgeschlagen (${response.status}).`)
+    const problem = await response.json().catch(() => null) as { message?: string; code?: string } | null
+    throw new TrainingPlanApiError(problem?.message ?? `Anfrage fehlgeschlagen (${response.status}).`, response.status, problem?.code ?? null)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
@@ -95,3 +102,12 @@ export function updatePlannedSession(id: string, sessionId: string, input: Sessi
 export function deletePlannedSession(id: string, sessionId: string): Promise<void> {
   return request(`/api/training-plans/${encodeURIComponent(id)}/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
 }
+
+export function exportTrainingPlan(id: string): Promise<TrainingPlanDocument> {
+  return request(`/api/training-plans/${encodeURIComponent(id)}/export`)
+}
+
+export function importTrainingPlan(document: TrainingPlanDocument, replaceExisting = false): Promise<TrainingPlanImportResult> {
+  return request('/api/training-plans/import', json({ ...document, ...(replaceExisting ? { replaceExisting: true } : {}) }))
+}
+import type { TrainingPlanDocument } from './trainingPlanJson'

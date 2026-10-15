@@ -30,6 +30,15 @@ class TrainingPlanRepository {
         return plans.stream().findFirst();
     }
 
+    Optional<TrainingPlanModels.Plan> findDuplicate(TrainingPlanModels.Plan candidate) {
+        List<TrainingPlanModels.Plan> plans = jdbc.query("SELECT id, name, goal, start_date, end_date, race_date, target_time_minutes, description FROM training_plan WHERE name = ? AND goal = ? AND start_date = ? AND end_date = ? AND race_date IS NOT DISTINCT FROM ?",
+                (rs, row) -> plan(rs.getObject("id", UUID.class), rs.getString("name"), rs.getString("goal"),
+                        rs.getObject("start_date", LocalDate.class), rs.getObject("end_date", LocalDate.class),
+                        rs.getObject("race_date", LocalDate.class), rs.getObject("target_time_minutes", Integer.class), rs.getString("description")),
+                candidate.name(), candidate.goal(), candidate.startDate(), candidate.endDate(), candidate.raceDate());
+        return plans.stream().findFirst();
+    }
+
     void insertPlan(TrainingPlanModels.Plan plan) {
         jdbc.update("INSERT INTO training_plan (id, name, goal, start_date, end_date, race_date, target_time_minutes, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 plan.id(), plan.name(), plan.goal(), plan.startDate(), plan.endDate(), plan.raceDate(), plan.targetTime(), plan.description());
@@ -86,6 +95,10 @@ class TrainingPlanRepository {
 
     void deleteSession(UUID id) {
         jdbc.update("DELETE FROM planned_session WHERE id = ?", id);
+    }
+
+    void deleteSessions(UUID planId) {
+        jdbc.update("DELETE FROM planned_session WHERE training_plan_id = ?", planId);
     }
 
     private static TrainingPlanModels.Plan plan(UUID id, String name, String goal, LocalDate start, LocalDate end,

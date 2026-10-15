@@ -4,6 +4,7 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,6 +34,15 @@ class TrainingPlanController {
 
     @GetMapping("/api/training-plans/{id}")
     TrainingPlanService.PlanView get(@PathVariable UUID id) { return service.get(id); }
+
+    @GetMapping(value = "/api/training-plans/{id}/export", produces = "application/json")
+    TrainingPlanService.PlanDocument export(@PathVariable UUID id) { return service.exportPlan(id); }
+
+    @PostMapping("/api/training-plans/import")
+    ResponseEntity<TrainingPlanService.ImportResult> importPlan(@RequestBody TrainingPlanService.ImportDocument document) {
+        var result = service.importPlan(document);
+        return ResponseEntity.status(result.replacedExisting() ? HttpStatus.OK : HttpStatus.CREATED).body(result);
+    }
 
     @PutMapping("/api/training-plans/{id}")
     TrainingPlanService.PlanView update(@PathVariable UUID id, @RequestBody TrainingPlanService.PlanRequest request) { return service.update(id, request); }

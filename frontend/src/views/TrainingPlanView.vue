@@ -23,6 +23,22 @@
       <div class="form-actions"><button class="primary" type="submit">{{ editingPlan ? 'Änderungen speichern' : 'Trainingsplan speichern' }}</button><button type="button" @click="showPlanForm = false">Abbrechen</button></div>
     </form>
 
+    <section class="panel json-panel" aria-labelledby="json-import-title">
+      <h2 id="json-import-title">Trainingsplan als JSON importieren</h2>
+      <label for="training-plan-file">JSON-Datei auswählen</label>
+      <input id="training-plan-file" type="file" accept=".json,application/json" @change="previewImport">
+      <div v-if="importDocument" class="import-preview" aria-label="Importvorschau">
+        <h3>{{ importDocument.plan.name }}</h3>
+        <p>{{ importDocument.plan.goal }} · {{ formatDate(importDocument.plan.startDate) }} – {{ formatDate(importDocument.plan.endDate) }}</p>
+        <p>{{ importDocument.plan.phases.length }} Phasen · {{ importDocument.plan.sessions.length }} Trainingseinheiten</p>
+        <div class="form-actions">
+          <button type="button" class="primary" aria-label="Import bestätigen" :disabled="importing" @click="confirmImport(false)">Plan importieren</button>
+          <button v-if="importDuplicate" type="button" class="danger" aria-label="Bestehenden Plan bewusst ersetzen" :disabled="importing" @click="confirmImport(true)">Bestehenden Plan bewusst ersetzen</button>
+          <button type="button" :disabled="importing" @click="clearImport">Abbrechen</button>
+        </div>
+      </div>
+    </section>
+
     <template v-if="!loading && plan">
       <div class="plan-picker panel">
         <label for="plan-select">Gewählter Trainingsplan</label>
@@ -33,6 +49,7 @@
           <div><h2>{{ plan.name }}</h2><p>{{ plan.goal }}<span v-if="plan.raceDate"> · Wettkampf am {{ formatDate(plan.raceDate) }}</span></p></div>
           <div class="plan-actions">
             <p><strong>Aktuelle Phase:</strong> {{ phase?.name ?? 'Keine Phase' }}</p>
+            <button type="button" @click="downloadPlan">JSON exportieren</button>
             <button type="button" @click="openPlanForm(true)">Plan bearbeiten</button>
             <button type="button" class="danger" @click="removePlan">Plan löschen</button>
           </div>
@@ -129,6 +146,8 @@ import {
   createPlannedSession,
   updatePlannedSession,
   deletePlannedSession,
+  exportTrainingPlan,
+  importTrainingPlan,
   type PlanInput,
   type PhaseInput,
   type SessionInput,
@@ -138,6 +157,7 @@ import {
   type TrainingPlanSummary,
 } from '../trainingPlansApi'
 import { initialPlanWeek, isoWeekLabel, phaseForWeek, shiftWeek, summarizeWeek } from '../trainingPlan'
+import { parseTrainingPlanDocument, type TrainingPlanDocument } from '../trainingPlanJson'
 
 const loading = ref(true)
 const sessionsLoading = ref(false)
@@ -155,6 +175,9 @@ const editingSessionId = ref<string | null>(null)
 const planForm = ref(blankPlanForm())
 const phaseForm = ref(blankPhaseForm())
 const sessionForm = ref(blankSessionForm())
+const importDocument = ref<TrainingPlanDocument | null>(null)
+const importDuplicate = ref(false)
+const importing = ref(false)
 const sessionTypes = [
   { value: 'EASY', label: 'Locker Dauerlauf' }, { value: 'RECOVERY', label: 'Regeneration' }, { value: 'LONG_RUN', label: 'Langer Lauf' },
   { value: 'TEMPO', label: 'Tempo' }, { value: 'INTERVAL', label: 'Intervalle' }, { value: 'TEST', label: 'Fitness-Test' },
@@ -321,6 +344,59 @@ async function removeSession(session: PlannedSession) {
   } catch (cause) { error.value = message(cause) }
 }
 
+async function previewImport(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  importDocument.value = null
+  importDuplicate.value = false
+  error.value = ''
+  if (!file) return
+  try { importDocument.value = parseTrainingPlanDocument(await file.text()) }
+  catch (cause) { error.value = message(cause) }
+  finally { input.value = '' }
+}
+
+async function confirmImport(replaceExisting: boolean) {
+  if (!importDocument.value) return
+  importing.value = true
+  error.value = ''
+  try {
+    const result = await importTrainingPlan(importDocument.value, replaceExisting)
+    const item = summary(result.plan)
+    plans.value = plans.value.some((existing) => existing.id === item.id)
+      ? plans.value.map((existing) => existing.id === item.id ? item : existing)
+      : [...plans.value, item]
+    selectedId.value = item.id
+    plan.value = result.plan
+    weekStart.value = initialPlanWeek(item.startDate, item.endDate, today)
+    importDocument.value = null
+    importDuplicate.value = false
+    await loadWeek()
+  } catch (cause) {
+    error.value = message(cause)
+    importDuplicate.value = isDuplicateError(cause)
+  } finally { importing.value = false }
+}
+
+function clearImport() {
+  importDocument.value = null
+  importDuplicate.value = false
+  error.value = ''
+}
+
+async function downloadPlan() {
+  if (!plan.value) return
+  try {
+    const document = await exportTrainingPlan(plan.value.id)
+    const url = URL.createObjectURL(new Blob([JSON.stringify(document, null, 2)], { type: 'application/json' }))
+    const link = window.document.createElement('a')
+    link.href = url
+    link.download = `${plan.value.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-')}.json`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 0)
+  } catch (cause) { error.value = message(cause) }
+}
+
 function changeWeek(amount: number) {
   const next = shiftWeek(weekStart.value, amount)
   if (next >= firstWeek.value && next <= lastWeek.value) weekStart.value = next
@@ -364,6 +440,7 @@ function typeLabel(type: PlannedSession['sessionType']) {
 }
 function message(cause: unknown) { return cause instanceof Error ? cause.message : 'Trainingsdaten konnten nicht geladen werden.' }
 function optionalNumber(value: string): number | null { return value === '' ? null : Number(value) }
+function isDuplicateError(cause: unknown): boolean { return cause !== null && typeof cause === 'object' && 'status' in cause && cause.status === 409 }
 function summary(value: TrainingPlan): TrainingPlanSummary { const { phases: _phases, sessions: _sessions, ...planSummary } = value; return planSummary }
 function blankPlanForm() { return { name: '', goal: '', startDate: '', endDate: '', raceDate: '', targetTime: '', description: '' } }
 function blankPhaseForm() { return { id: '', name: '', startDate: '', endDate: '', description: '' } }
@@ -394,6 +471,12 @@ button.primary { color: var(--color-ink); background: var(--color-accent); borde
 .plan-actions { justify-content: flex-end; }
 .plan-actions p { width: 100%; }
 .phase-panel { display: grid; gap: .75rem; }
+.json-panel { display: grid; gap: .5rem; }
+.json-panel h2, .import-preview h3 { margin: 0; color: var(--color-ink); }
+.json-panel label { color: var(--color-muted); font-size: .85rem; font-weight: 700; }
+.json-panel input[type="file"] { max-width: 100%; min-height: 44px; }
+.import-preview { padding: .8rem; background: var(--color-canvas); border-radius: var(--radius-control); }
+.import-preview p { margin: .25rem 0; }
 .phase-list { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }
 .phase-list li { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .7rem; background: var(--color-canvas); border-radius: var(--radius-control); }
 .phase-list small { display: block; color: var(--color-muted); }

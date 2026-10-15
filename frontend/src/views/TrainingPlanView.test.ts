@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TrainingPlanView from './TrainingPlanView.vue'
-import { createPlannedSession, createTrainingPlan, getPlannedSessions, getTrainingPlan, listTrainingPlans, replaceTrainingPhases, updatePlannedSession, type PlannedSession } from '../trainingPlansApi'
+import { createPlannedSession, createTrainingPlan, getPlannedSessions, getTrainingPlan, importTrainingPlan, listTrainingPlans, replaceTrainingPhases, updatePlannedSession, type PlannedSession } from '../trainingPlansApi'
 import { isoWeekLabel, mondayOfLocalDate, shiftWeek } from '../trainingPlan'
 
 vi.mock('../trainingPlansApi', () => ({
@@ -9,6 +9,7 @@ vi.mock('../trainingPlansApi', () => ({
   getTrainingPlan: vi.fn(),
   getPlannedSessions: vi.fn(),
   createTrainingPlan: vi.fn(),
+  importTrainingPlan: vi.fn(),
   updateTrainingPlan: vi.fn(),
   deleteTrainingPlan: vi.fn(),
   replaceTrainingPhases: vi.fn(),
@@ -129,5 +130,60 @@ describe('TrainingPlanView weekly overview', () => {
     await wrapper.get('form[aria-label="Training hinzufügen"]').trigger('submit')
 
     await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('RPE muss zwischen 1 und 10 liegen.'))
+  })
+
+  it('previews a validated JSON plan before importing after confirmation', async () => {
+    vi.mocked(importTrainingPlan).mockResolvedValue({ plan: { ...plan, phases: [], sessions: [] }, replacedExisting: false })
+    const wrapper = mount(TrainingPlanView)
+    await vi.waitFor(() => expect(wrapper.text()).toContain(plan.name))
+    const content = JSON.stringify({ schemaVersion: 1, plan: {
+      name: 'External plan', goal: '10 km', startDate: plan.startDate, endDate: plan.endDate, phases: [], sessions: [],
+    } })
+    const file = new File([content], 'plan.json', { type: 'application/json' })
+    Object.defineProperty(file, 'text', { value: async () => content })
+    const input = wrapper.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('External plan'))
+
+    expect(importTrainingPlan).not.toHaveBeenCalled()
+    await wrapper.get('button[aria-label="Import bestätigen"]').trigger('click')
+    expect(importTrainingPlan).toHaveBeenCalledWith(expect.objectContaining({ schemaVersion: 1, plan: expect.objectContaining({ name: 'External plan' }) }), false)
+  })
+
+  it('rejects invalid JSON before showing a preview or sending an import request', async () => {
+    const wrapper = mount(TrainingPlanView)
+    await vi.waitFor(() => expect(wrapper.text()).toContain(plan.name))
+    const content = '{"schemaVersion":99,"plan":{}}'
+    const file = new File([content], 'invalid.json', { type: 'application/json' })
+    Object.defineProperty(file, 'text', { value: async () => content })
+    const input = wrapper.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('Schema-Version')
+    expect(wrapper.find('[aria-label="Importvorschau"]').exists()).toBe(false)
+    expect(importTrainingPlan).not.toHaveBeenCalled()
+  })
+
+  it('requires an explicit replace action after the server detects a duplicate', async () => {
+    vi.mocked(importTrainingPlan).mockRejectedValueOnce(Object.assign(new Error('Plan bereits vorhanden.'), { status: 409 }))
+      .mockResolvedValueOnce({ plan: { ...plan, phases: [], sessions: [] }, replacedExisting: true })
+    const wrapper = mount(TrainingPlanView)
+    await vi.waitFor(() => expect(wrapper.text()).toContain(plan.name))
+    const content = JSON.stringify({ schemaVersion: 1, plan: {
+      name: 'Existing plan', goal: '10 km', startDate: plan.startDate, endDate: plan.endDate, phases: [], sessions: [],
+    } })
+    const file = new File([content], 'plan.json', { type: 'application/json' })
+    Object.defineProperty(file, 'text', { value: async () => content })
+    const input = wrapper.get('input[type="file"]')
+    Object.defineProperty(input.element, 'files', { value: [file], configurable: true })
+    await input.trigger('change')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Existing plan'))
+    await wrapper.get('button[aria-label="Import bestätigen"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.get('[role="alert"]').text()).toContain('Plan bereits vorhanden.'))
+    await wrapper.get('button[aria-label="Bestehenden Plan bewusst ersetzen"]').trigger('click')
+
+    expect(importTrainingPlan).toHaveBeenNthCalledWith(2, expect.anything(), true)
   })
 })
