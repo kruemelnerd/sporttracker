@@ -9,6 +9,7 @@ const mountApp = async (path = '/') => {
     routes: [
       { path: '/', name: 'dashboard', component: { template: '<p>Dashboard content</p>' } },
       { path: '/import', name: 'import', component: { template: '<p>Import content</p>' } },
+      { path: '/training-plan', name: 'training-plan', component: { template: '<p>Training plan content</p>' } },
     ],
   })
   await router.push(path)
@@ -27,5 +28,12 @@ describe('App shell', () => {
     expect(wrapper.find('nav a[href="/"]').text()).toContain('Übersicht')
     expect(wrapper.find('nav a[href="/import"]').text()).toContain('Import')
     expect(wrapper.find('nav a[aria-current="page"]').attributes('href')).toBe('/')
+  })
+
+  it('provides a current Trainingsplan navigation link', async () => {
+    const wrapper = await mountApp('/training-plan')
+
+    expect(wrapper.find('nav a[href="/training-plan"]').text()).toContain('Trainingsplan')
+    expect(wrapper.find('nav a[aria-current="page"]').attributes('href')).toBe('/training-plan')
   })
 })

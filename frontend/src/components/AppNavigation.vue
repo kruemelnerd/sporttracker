@@ -17,6 +17,9 @@
       <RouterLink to="/import" :aria-current="isCurrent('import') ? 'page' : undefined" @click="menuOpen = false">
         Import
       </RouterLink>
+      <RouterLink to="/training-plan" :aria-current="isCurrent('training-plan') ? 'page' : undefined" @click="menuOpen = false">
+        Trainingsplan
+      </RouterLink>
     </nav>
   </header>
 </template>
