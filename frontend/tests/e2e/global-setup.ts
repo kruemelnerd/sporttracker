@@ -6,6 +6,9 @@ export default function globalSetup() {
       RAISE EXCEPTION 'Refusing to reset non-E2E database: % / %', current_database(), current_user;
     END IF;
     EXECUTE 'TRUNCATE activity, import_file, activity_record, lap RESTART IDENTITY CASCADE';
+    IF to_regclass('public.training_plan') IS NOT NULL THEN
+      EXECUTE 'TRUNCATE training_plan CASCADE';
+    END IF;
   END $$;`
   const result = spawnSync('docker', [
     'compose', '-p', 'sporttracker-m4-e2e', '-f', '../compose.e2e.yaml', 'exec', '-T', 'db',
