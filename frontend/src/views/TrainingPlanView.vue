@@ -2,13 +2,28 @@
   <section class="training-plan" aria-labelledby="training-plan-title">
     <header class="page-heading">
       <div><p class="eyebrow">DEIN TRAININGSPLAN</p><h1 id="training-plan-title">Trainingsplan</h1></div>
+      <button type="button" class="primary" aria-label="Trainingsplan erstellen" @click="openPlanForm()">Trainingsplan erstellen</button>
     </header>
 
     <p v-if="loading" role="status">Trainingspläne werden geladen …</p>
-    <p v-else-if="error" role="alert">{{ error }}</p>
-    <p v-else-if="!plans.length" class="empty-state">Noch kein Trainingsplan vorhanden. Erstelle einen Plan, um deine Wochen zu organisieren.</p>
+    <p v-if="error" role="alert">{{ error }}</p>
+    <p v-if="!loading && !plans.length" class="empty-state">Noch kein Trainingsplan vorhanden. Erstelle einen Plan, um deine Wochen zu organisieren.</p>
 
-    <template v-else-if="plan">
+    <form v-if="showPlanForm" class="panel editor" :aria-label="editingPlan ? 'Trainingsplan bearbeiten' : 'Trainingsplan erstellen'" @submit.prevent="savePlan">
+      <h2>{{ editingPlan ? 'Trainingsplan bearbeiten' : 'Trainingsplan erstellen' }}</h2>
+      <label for="plan-name">Name</label><input id="plan-name" v-model="planForm.name" name="planName" required maxlength="200">
+      <label for="plan-goal">Wettkampfziel</label><input id="plan-goal" v-model="planForm.goal" name="goal" required maxlength="200">
+      <div class="form-grid">
+        <div><label for="plan-start">Planbeginn</label><input id="plan-start" v-model="planForm.startDate" name="startDate" type="date" required></div>
+        <div><label for="plan-end">Planende</label><input id="plan-end" v-model="planForm.endDate" name="endDate" type="date" required></div>
+        <div><label for="plan-race">Wettkampfdatum (optional)</label><input id="plan-race" v-model="planForm.raceDate" type="date"></div>
+        <div><label for="plan-target-time">Zielzeit in Minuten (optional)</label><input id="plan-target-time" v-model="planForm.targetTime" type="number" min="1" step="1"></div>
+      </div>
+      <label for="plan-description">Beschreibung (optional)</label><textarea id="plan-description" v-model="planForm.description" rows="2" />
+      <div class="form-actions"><button class="primary" type="submit">{{ editingPlan ? 'Änderungen speichern' : 'Trainingsplan speichern' }}</button><button type="button" @click="showPlanForm = false">Abbrechen</button></div>
+    </form>
+
+    <template v-if="!loading && plan">
       <div class="plan-picker panel">
         <label for="plan-select">Gewählter Trainingsplan</label>
         <select id="plan-select" v-model="selectedId" @change="selectPlan(selectedId)">
@@ -16,9 +31,29 @@
         </select>
         <div class="plan-intro">
           <div><h2>{{ plan.name }}</h2><p>{{ plan.goal }}<span v-if="plan.raceDate"> · Wettkampf am {{ formatDate(plan.raceDate) }}</span></p></div>
-          <p><strong>Aktuelle Phase:</strong> {{ phase?.name ?? 'Keine Phase' }}</p>
+          <div class="plan-actions">
+            <p><strong>Aktuelle Phase:</strong> {{ phase?.name ?? 'Keine Phase' }}</p>
+            <button type="button" @click="openPlanForm(true)">Plan bearbeiten</button>
+            <button type="button" class="danger" @click="removePlan">Plan löschen</button>
+          </div>
         </div>
       </div>
+
+      <section class="panel phase-panel" aria-labelledby="phase-heading">
+        <div class="section-heading"><h2 id="phase-heading">Trainingsphasen</h2><button type="button" @click="openPhaseForm()">Phase hinzufügen</button></div>
+        <p v-if="!plan.phases.length" class="day-empty">Noch keine Trainingsphasen.</p>
+        <ul v-else class="phase-list"><li v-for="item in plan.phases" :key="item.id">
+          <span><strong>{{ item.name }}</strong> · {{ formatDate(item.startDate) }} – {{ formatDate(item.endDate) }}<small v-if="item.description">{{ item.description }}</small></span>
+          <span class="form-actions"><button type="button" :aria-label="`Phase bearbeiten: ${item.name}`" @click="openPhaseForm(item)">Bearbeiten</button><button type="button" class="danger" :aria-label="`Phase löschen: ${item.name}`" @click="removePhase(item.id)">Löschen</button></span>
+        </li></ul>
+        <form v-if="showPhaseForm" class="editor sub-editor" aria-label="Trainingsphase bearbeiten" @submit.prevent="savePhase">
+          <h3>{{ phaseForm.id ? 'Trainingsphase bearbeiten' : 'Trainingsphase hinzufügen' }}</h3>
+          <label for="phase-name">Name</label><input id="phase-name" v-model="phaseForm.name" required maxlength="200">
+          <div class="form-grid"><div><label for="phase-start">Beginn</label><input id="phase-start" v-model="phaseForm.startDate" type="date" required></div><div><label for="phase-end">Ende</label><input id="phase-end" v-model="phaseForm.endDate" type="date" required></div></div>
+          <label for="phase-description">Beschreibung (optional)</label><textarea id="phase-description" v-model="phaseForm.description" rows="2" />
+          <div class="form-actions"><button class="primary" type="submit">Phase speichern</button><button type="button" @click="showPhaseForm = false">Abbrechen</button></div>
+        </form>
+      </section>
 
       <section class="week-section" aria-labelledby="week-heading">
         <div class="week-navigation">
@@ -34,6 +69,25 @@
           <div><dt>Weitere Sporteinheiten</dt><dd data-testid="other-sessions">{{ metrics.otherSessionCount }}</dd></div>
           <div><dt>Trainingsphase</dt><dd data-testid="week-phase">{{ phase?.name ?? '–' }}</dd></div>
         </dl>
+
+        <div class="section-heading"><h3>Geplante Einheiten</h3><button type="button" aria-label="Training hinzufügen" @click="openSessionForm()">Training hinzufügen</button></div>
+        <form v-if="showSessionForm" class="panel editor sub-editor" :aria-label="editingSessionId ? 'Training bearbeiten' : 'Training hinzufügen'" @submit.prevent="saveSession">
+          <h3>{{ editingSessionId ? 'Training bearbeiten' : 'Training hinzufügen' }}</h3>
+          <div class="form-grid">
+            <div><label for="session-date">Datum</label><input id="session-date" v-model="sessionForm.date" name="sessionDate" type="date" :min="plan.startDate" :max="plan.endDate" required></div>
+            <div><label for="session-sport">Sportart</label><select id="session-sport" v-model="sessionForm.sport"><option value="RUN">Laufen</option><option value="BIKE">Rad</option><option value="STRENGTH">Kraft/Stabi</option><option value="OTHER">Sonstiges</option></select></div>
+            <div><label for="session-type">Trainingstyp</label><select id="session-type" v-model="sessionForm.sessionType"><option v-for="option in sessionTypes" :key="option.value" :value="option.value">{{ option.label }}</option></select></div>
+            <div><label for="session-title">Titel</label><input id="session-title" v-model="sessionForm.title" name="sessionTitle" required maxlength="200"></div>
+            <div><label for="session-distance">Zieldistanz (km, optional)</label><input id="session-distance" v-model="sessionForm.targetDistanceKm" type="number" min="0.01" step="0.01"></div>
+            <div><label for="session-duration">Zieldauer (Minuten, optional)</label><input id="session-duration" v-model="sessionForm.targetDurationMinutes" type="number" min="1" step="1"></div>
+            <div><label for="session-pace-from">Pace von (min/km, optional)</label><input id="session-pace-from" v-model="sessionForm.targetPaceFrom" type="number" min="0.1" step="0.1"></div>
+            <div><label for="session-pace-to">Pace bis (min/km, optional)</label><input id="session-pace-to" v-model="sessionForm.targetPaceTo" type="number" min="0.1" step="0.1"></div>
+            <div><label for="session-rpe">Intensität RPE (1–10, optional)</label><input id="session-rpe" v-model="sessionForm.targetRpe" name="targetRpe" type="number" min="1" max="10" step="1"></div>
+          </div>
+          <label for="session-instructions">Anweisung (optional)</label><textarea id="session-instructions" v-model="sessionForm.instructions" rows="2" />
+          <label for="session-notes">Notizen (optional)</label><textarea id="session-notes" v-model="sessionForm.notes" rows="2" />
+          <div class="form-actions"><button class="primary" type="submit">Einheit speichern</button><button type="button" @click="showSessionForm = false">Abbrechen</button></div>
+        </form>
 
         <p v-if="sessionsLoading" role="status">Woche wird geladen …</p>
         <p v-else-if="!sessions.length" class="week-empty">Keine geplanten Einheiten in dieser Woche.</p>
@@ -51,6 +105,7 @@
                   <span v-if="session.targetPaceFrom !== null">{{ session.targetPaceFrom }}–{{ session.targetPaceTo ?? session.targetPaceFrom }} min/km</span>
                 </p>
                 <p v-if="session.instructions" class="instructions">{{ session.instructions }}</p>
+                <div class="form-actions session-actions"><button type="button" :aria-label="`Training bearbeiten: ${session.title}`" @click="openSessionForm(session)">Bearbeiten / verschieben</button><button type="button" class="danger" :aria-label="`Training löschen: ${session.title}`" @click="removeSession(session)">Löschen</button></div>
               </li>
             </ul>
             <p v-else class="day-empty">Keine Einheit</p>
@@ -67,6 +122,17 @@ import {
   getPlannedSessions,
   getTrainingPlan,
   listTrainingPlans,
+  createTrainingPlan,
+  updateTrainingPlan,
+  deleteTrainingPlan,
+  replaceTrainingPhases,
+  createPlannedSession,
+  updatePlannedSession,
+  deletePlannedSession,
+  type PlanInput,
+  type PhaseInput,
+  type SessionInput,
+  type TrainingPhase,
   type PlannedSession,
   type TrainingPlan,
   type TrainingPlanSummary,
@@ -81,11 +147,24 @@ const selectedId = ref('')
 const plan = ref<TrainingPlan | null>(null)
 const sessions = ref<PlannedSession[]>([])
 const weekStart = ref('')
+const showPlanForm = ref(false)
+const editingPlan = ref(false)
+const showPhaseForm = ref(false)
+const showSessionForm = ref(false)
+const editingSessionId = ref<string | null>(null)
+const planForm = ref(blankPlanForm())
+const phaseForm = ref(blankPhaseForm())
+const sessionForm = ref(blankSessionForm())
+const sessionTypes = [
+  { value: 'EASY', label: 'Locker Dauerlauf' }, { value: 'RECOVERY', label: 'Regeneration' }, { value: 'LONG_RUN', label: 'Langer Lauf' },
+  { value: 'TEMPO', label: 'Tempo' }, { value: 'INTERVAL', label: 'Intervalle' }, { value: 'TEST', label: 'Fitness-Test' },
+  { value: 'RACE', label: 'Wettkampf' }, { value: 'OTHER', label: 'Sonstiges' },
+] as const
 const today = localDateString(new Date())
 const firstWeek = computed(() => plan.value ? monday(plan.value.startDate) : '')
 const lastWeek = computed(() => plan.value ? monday(plan.value.endDate) : '')
 const weekEnd = computed(() => addDays(weekStart.value, 6))
-const phase = computed(() => plan.value ? phaseForWeek(plan.value.phases, weekStart.value) : null)
+const phase = computed(() => plan.value ? phaseForWeek(plan.value.phases ?? [], weekStart.value) : null)
 const metrics = computed(() => summarizeWeek(sessions.value))
 const days = computed(() => Array.from({ length: 7 }, (_, index) => {
   const date = addDays(weekStart.value, index)
@@ -106,18 +185,22 @@ onMounted(async () => {
   }
 })
 
-watch(weekStart, async (week) => {
+watch([weekStart, () => plan.value?.id], async ([week]) => {
   if (!week || !plan.value) return
+  await loadWeek()
+})
+
+async function loadWeek() {
+  if (!weekStart.value || !plan.value) return
   sessionsLoading.value = true
-  error.value = ''
   try {
-    sessions.value = await getPlannedSessions(plan.value.id, week, weekEnd.value)
+    sessions.value = await getPlannedSessions(plan.value.id, weekStart.value, weekEnd.value)
   } catch (cause) {
     error.value = message(cause)
   } finally {
     sessionsLoading.value = false
   }
-})
+}
 
 async function selectPlan(id: string) {
   if (!id) return
@@ -128,6 +211,114 @@ async function selectPlan(id: string) {
   } catch (cause) {
     error.value = message(cause)
   }
+}
+
+function openPlanForm(edit = false) {
+  editingPlan.value = edit
+  planForm.value = edit && plan.value ? {
+    name: plan.value.name, goal: plan.value.goal, startDate: plan.value.startDate, endDate: plan.value.endDate,
+    raceDate: plan.value.raceDate ?? '', targetTime: plan.value.targetTime?.toString() ?? '', description: plan.value.description ?? '',
+  } : blankPlanForm()
+  showPlanForm.value = true
+  error.value = ''
+}
+
+async function savePlan() {
+  error.value = ''
+  const input: PlanInput = {
+    name: planForm.value.name.trim(), goal: planForm.value.goal.trim(), startDate: planForm.value.startDate, endDate: planForm.value.endDate,
+    raceDate: planForm.value.raceDate || null, targetTime: optionalNumber(planForm.value.targetTime), description: planForm.value.description.trim() || null,
+  }
+  try {
+    const saved = editingPlan.value && plan.value ? await updateTrainingPlan(plan.value.id, input) : await createTrainingPlan(input)
+    plans.value = editingPlan.value ? plans.value.map((item) => item.id === saved.id ? summary(saved) : item) : [...plans.value, summary(saved)]
+    selectedId.value = saved.id
+    plan.value = saved
+    showPlanForm.value = false
+    weekStart.value = initialPlanWeek(saved.startDate, saved.endDate, today)
+    await loadWeek()
+  } catch (cause) { error.value = message(cause) }
+}
+
+async function removePlan() {
+  if (!plan.value || !window.confirm(`Trainingsplan „${plan.value.name}“ mit allen Phasen und Einheiten löschen?`)) return
+  try {
+    await deleteTrainingPlan(plan.value.id)
+    plans.value = plans.value.filter((item) => item.id !== plan.value?.id)
+    plan.value = null
+    selectedId.value = ''
+    sessions.value = []
+  } catch (cause) { error.value = message(cause) }
+}
+
+function openPhaseForm(phase?: TrainingPhase) {
+  phaseForm.value = phase ? { id: phase.id, name: phase.name, startDate: phase.startDate, endDate: phase.endDate, description: phase.description ?? '' } : blankPhaseForm()
+  showPhaseForm.value = true
+  error.value = ''
+}
+
+async function savePhase() {
+  if (!plan.value) return
+  const current = plan.value.phases.filter((item) => item.id !== phaseForm.value.id)
+  const updated = [...current, {
+    ...(phaseForm.value.id ? { id: phaseForm.value.id } : {}), name: phaseForm.value.name.trim(),
+    startDate: phaseForm.value.startDate, endDate: phaseForm.value.endDate, description: phaseForm.value.description.trim() || null,
+  } satisfies PhaseInput]
+  try {
+    plan.value = { ...plan.value, phases: await replaceTrainingPhases(plan.value.id, updated) }
+    showPhaseForm.value = false
+    error.value = ''
+  } catch (cause) { error.value = message(cause) }
+}
+
+async function removePhase(id: string) {
+  if (!plan.value) return
+  const phase = plan.value.phases.find((item) => item.id === id)
+  if (!phase || !window.confirm(`Trainingsphase „${phase.name}“ löschen?`)) return
+  try {
+    plan.value = { ...plan.value, phases: await replaceTrainingPhases(plan.value.id, plan.value.phases.filter((item) => item.id !== id)) }
+    error.value = ''
+  } catch (cause) { error.value = message(cause) }
+}
+
+function openSessionForm(session?: PlannedSession) {
+  editingSessionId.value = session?.id ?? null
+  sessionForm.value = session ? {
+    date: session.date, sport: session.sport, sessionType: session.sessionType, title: session.title,
+    targetDistanceKm: session.targetDistanceKm?.toString() ?? '', targetDurationMinutes: session.targetDurationMinutes?.toString() ?? '',
+    targetPaceFrom: session.targetPaceFrom?.toString() ?? '', targetPaceTo: session.targetPaceTo?.toString() ?? '',
+    targetRpe: session.targetRpe?.toString() ?? '', instructions: session.instructions ?? '', notes: session.notes ?? '',
+  } : { ...blankSessionForm(), date: weekStart.value }
+  showSessionForm.value = true
+  error.value = ''
+}
+
+async function saveSession() {
+  if (!plan.value) return
+  error.value = ''
+  const input: SessionInput = {
+    date: sessionForm.value.date, sport: sessionForm.value.sport as SessionInput['sport'], sessionType: sessionForm.value.sessionType as SessionInput['sessionType'],
+    title: sessionForm.value.title.trim(), targetDistanceKm: optionalNumber(sessionForm.value.targetDistanceKm),
+    targetDurationMinutes: optionalNumber(sessionForm.value.targetDurationMinutes), targetPaceFrom: optionalNumber(sessionForm.value.targetPaceFrom),
+    targetPaceTo: optionalNumber(sessionForm.value.targetPaceTo), targetRpe: optionalNumber(sessionForm.value.targetRpe),
+    instructions: sessionForm.value.instructions.trim() || null, notes: sessionForm.value.notes.trim() || null,
+  }
+  try {
+    if (editingSessionId.value) await updatePlannedSession(plan.value.id, editingSessionId.value, input)
+    else await createPlannedSession(plan.value.id, input)
+    showSessionForm.value = false
+    editingSessionId.value = null
+    await loadWeek()
+  } catch (cause) { error.value = message(cause) }
+}
+
+async function removeSession(session: PlannedSession) {
+  if (!plan.value || !window.confirm(`Training „${session.title}“ löschen?`)) return
+  try {
+    await deletePlannedSession(plan.value.id, session.id)
+    await loadWeek()
+    error.value = ''
+  } catch (cause) { error.value = message(cause) }
 }
 
 function changeWeek(amount: number) {
@@ -172,6 +363,11 @@ function typeLabel(type: PlannedSession['sessionType']) {
   return { EASY: 'Locker', RECOVERY: 'Regeneration', LONG_RUN: 'Langer Lauf', TEMPO: 'Tempo', INTERVAL: 'Intervalle', TEST: 'Test', RACE: 'Wettkampf', OTHER: 'Einheit' }[type]
 }
 function message(cause: unknown) { return cause instanceof Error ? cause.message : 'Trainingsdaten konnten nicht geladen werden.' }
+function optionalNumber(value: string): number | null { return value === '' ? null : Number(value) }
+function summary(value: TrainingPlan): TrainingPlanSummary { const { phases: _phases, sessions: _sessions, ...planSummary } = value; return planSummary }
+function blankPlanForm() { return { name: '', goal: '', startDate: '', endDate: '', raceDate: '', targetTime: '', description: '' } }
+function blankPhaseForm() { return { id: '', name: '', startDate: '', endDate: '', description: '' } }
+function blankSessionForm() { return { date: '', sport: 'RUN', sessionType: 'EASY', title: '', targetDistanceKm: '', targetDurationMinutes: '', targetPaceFrom: '', targetPaceTo: '', targetRpe: '', instructions: '', notes: '' } }
 </script>
 
 <style scoped>
@@ -184,6 +380,26 @@ button { color: var(--color-ink); background: var(--color-surface); cursor: poin
 button:disabled { opacity: .5; cursor: not-allowed; }
 button.primary { color: var(--color-ink); background: var(--color-accent); border-color: var(--color-accent); font-weight: 700; }
 .panel, .week-section { padding: 1rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); }
+.editor { display: grid; gap: .55rem; }
+.editor h2, .editor h3, .section-heading h2, .section-heading h3 { margin: 0; color: var(--color-ink); }
+.editor label { margin-top: .35rem; color: var(--color-muted); font-size: .85rem; font-weight: 700; }
+.editor input, .editor select, .editor textarea { width: 100%; min-width: 0; padding: .6rem .7rem; color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.editor textarea { resize: vertical; }
+.form-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: .7rem; }
+.form-grid > div { min-width: 0; }
+.form-grid > div label { display: block; }
+.form-actions, .section-heading, .plan-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.form-actions { margin-top: .5rem; }
+.section-heading { justify-content: space-between; }
+.plan-actions { justify-content: flex-end; }
+.plan-actions p { width: 100%; }
+.phase-panel { display: grid; gap: .75rem; }
+.phase-list { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }
+.phase-list li { display: flex; justify-content: space-between; align-items: center; gap: .75rem; padding: .7rem; background: var(--color-canvas); border-radius: var(--radius-control); }
+.phase-list small { display: block; color: var(--color-muted); }
+.sub-editor { padding: .8rem; }
+.danger { color: var(--color-danger); }
+.session-actions { margin-top: .5rem; }
 .plan-picker label { display: block; margin-bottom: .35rem; color: var(--color-muted); font-size: .85rem; font-weight: 700; }
 .plan-picker select { width: min(100%, 28rem); background: var(--color-surface); }
 .plan-intro { align-items: flex-end; margin-top: 1rem; }
@@ -208,7 +424,7 @@ button.primary { color: var(--color-ink); background: var(--color-accent); borde
 .session-card .session-target { display: flex; flex-wrap: wrap; gap: .25rem .65rem; color: var(--color-muted); font-size: .82rem; }
 .instructions { color: var(--color-muted); font-size: .85rem; }
 .day-empty, .week-empty, .empty-state { color: var(--color-muted); }
-@media (min-width: 600px) { .week-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } .days { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 600px) { .week-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); } .days, .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1024px) { .days { grid-template-columns: repeat(7, minmax(0, 1fr)); } .day-card { padding: .6rem; } }
-@media (max-width: 480px) { .page-heading, .plan-intro { align-items: stretch; flex-direction: column; } .plan-intro > p { text-align: left; } .week-navigation { gap: .4rem; } .week-navigation h2 { font-size: 1rem; } .week-navigation button { padding: .5rem; } }
+@media (max-width: 480px) { .page-heading, .plan-intro { align-items: stretch; flex-direction: column; } .plan-actions { justify-content: flex-start; } .plan-actions p { text-align: left; } .phase-list li { align-items: flex-start; flex-direction: column; } .week-navigation { gap: .4rem; } .week-navigation h2 { font-size: 1rem; } .week-navigation button { padding: .5rem; } }
 </style>
