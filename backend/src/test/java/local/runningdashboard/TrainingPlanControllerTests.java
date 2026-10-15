@@ -76,6 +76,11 @@ class TrainingPlanControllerTests {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isNotEmpty());
 
         mvc.perform(post("/api/training-plans").contentType(MediaType.APPLICATION_JSON).content("""
+                {"name":"m6-test-fraction","goal":"Race","startDate":"2027-03-01","endDate":"2027-03-20","targetTime":105.9}
+                """))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isNotEmpty());
+
+        mvc.perform(post("/api/training-plans").contentType(MediaType.APPLICATION_JSON).content("""
                 {"name":"m6-test-invalid","goal":"Race","startDate":"2027-03-01","endDate":"2027-03-20"}
                 """))
                 .andExpect(status().isCreated());
@@ -86,6 +91,10 @@ class TrainingPlanControllerTests {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isNotEmpty());
         mvc.perform(post("/api/training-plans/{id}/sessions", planId).contentType(MediaType.APPLICATION_JSON).content("""
                 {"date":"2027-03-15","sport":null,"sessionType":"EASY","title":"Sport fehlt"}
+                """))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isNotEmpty());
+        mvc.perform(post("/api/training-plans/{id}/sessions", planId).contentType(MediaType.APPLICATION_JSON).content("""
+                {"date":"2027-03-15","sport":"RUN","sessionType":"EASY","title":"Bruchteile","targetDurationMinutes":1.9,"targetRpe":3.9}
                 """))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isNotEmpty());
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM planned_session WHERE training_plan_id = ?", Integer.class, java.util.UUID.fromString(planId)));

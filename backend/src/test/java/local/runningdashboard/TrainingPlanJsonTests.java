@@ -66,6 +66,12 @@ class TrainingPlanJsonTests {
         invalid = DOCUMENT.replace("\"targetRpe\":3", "\"targetRpe\":11").replace(NAME, "m6-test-json-invalid");
         mvc.perform(post("/api/training-plans/import").contentType(MediaType.APPLICATION_JSON).content(invalid))
                 .andExpect(status().isBadRequest());
+        invalid = DOCUMENT.replace("\"targetRpe\":3", "\"targetRpe\":3.9").replace(NAME, "m6-test-json-fraction");
+        mvc.perform(post("/api/training-plans/import").contentType(MediaType.APPLICATION_JSON).content(invalid))
+                .andExpect(status().isBadRequest());
+        invalid = DOCUMENT.replace("\"targetTime\":105", "\"targetTime\":105.9").replace(NAME, "m6-test-json-time-fraction");
+        mvc.perform(post("/api/training-plans/import").contentType(MediaType.APPLICATION_JSON).content(invalid))
+                .andExpect(status().isBadRequest());
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM training_plan WHERE name LIKE 'm6-test-json%'", Integer.class));
     }
 }

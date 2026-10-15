@@ -1,5 +1,6 @@
 package local.runningdashboard;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.HashSet;
 import java.util.List;
@@ -33,7 +34,7 @@ class TrainingPlanService {
     PlanView create(PlanRequest request) {
         validatePlan(request);
         var plan = new TrainingPlanModels.Plan(UUID.randomUUID(), request.name().trim(), request.goal().trim(), request.startDate(), request.endDate(),
-                request.raceDate(), request.targetTime(), request.description());
+                request.raceDate(), integer(request.targetTime()), request.description());
         repository.insertPlan(plan);
         return view(plan);
     }
@@ -45,7 +46,7 @@ class TrainingPlanService {
         boolean childrenOutOfRange = !repository.findPhases(id).stream().allMatch(phase -> inRange(phase.startDate(), request.startDate(), request.endDate()) && inRange(phase.endDate(), request.startDate(), request.endDate()))
                 || repository.findSessions(id, current.startDate(), current.endDate()).stream().anyMatch(session -> !inRange(session.date(), request.startDate(), request.endDate()));
         if (childrenOutOfRange) throw invalid("Planzeitraum darf vorhandene Phasen und Einheiten nicht ausschließen.");
-        repository.updatePlan(new TrainingPlanModels.Plan(id, request.name().trim(), request.goal().trim(), request.startDate(), request.endDate(), request.raceDate(), request.targetTime(), request.description()));
+        repository.updatePlan(new TrainingPlanModels.Plan(id, request.name().trim(), request.goal().trim(), request.startDate(), request.endDate(), request.raceDate(), integer(request.targetTime()), request.description()));
         return get(id);
     }
 
@@ -109,8 +110,8 @@ class TrainingPlanService {
                 .map(phase -> new ImportPhase(phase.name(), phase.startDate(), phase.endDate(), phase.description())).toList();
         var sessions = repository.findSessions(id, plan.startDate(), plan.endDate()).stream()
                 .map(session -> new ImportSession(session.date(), session.sport(), session.sessionType(), session.title(), session.targetDistanceKm(),
-                        session.targetDurationMinutes(), session.targetPaceFrom(), session.targetPaceTo(), session.targetRpe(), session.instructions(), session.notes())).toList();
-        return new PlanDocument(1, new ImportPlan(plan.name(), plan.goal(), plan.startDate(), plan.endDate(), plan.raceDate(), plan.targetTime(), plan.description(), phases, sessions));
+                        decimal(session.targetDurationMinutes()), session.targetPaceFrom(), session.targetPaceTo(), decimal(session.targetRpe()), session.instructions(), session.notes())).toList();
+        return new PlanDocument(1, new ImportPlan(plan.name(), plan.goal(), plan.startDate(), plan.endDate(), plan.raceDate(), decimal(plan.targetTime()), plan.description(), phases, sessions));
     }
 
     @Transactional
@@ -126,19 +127,19 @@ class TrainingPlanService {
         var phases = input.phases().stream().map(phase -> {
             if (phase == null) throw invalid("Trainingsphase darf nicht leer sein.");
             var request = new PhaseRequest(null, phase.name(), phase.startDate(), phase.endDate(), phase.description());
-            validatePhase(request, new TrainingPlanModels.Plan(null, planRequest.name(), planRequest.goal(), planRequest.startDate(), planRequest.endDate(), planRequest.raceDate(), planRequest.targetTime(), planRequest.description()));
+            validatePhase(request, new TrainingPlanModels.Plan(null, planRequest.name(), planRequest.goal(), planRequest.startDate(), planRequest.endDate(), planRequest.raceDate(), integer(planRequest.targetTime()), planRequest.description()));
             return new TrainingPlanModels.Phase(null, null, phase.name().trim(), phase.startDate(), phase.endDate(), phase.description());
         }).toList();
         var sessions = input.sessions().stream().map(session -> {
             if (session == null) throw invalid("Trainingseinheit darf nicht leer sein.");
             var request = new SessionRequest(session.date(), session.sport(), session.sessionType(), session.title(), session.targetDistanceKm(), session.targetDurationMinutes(),
                     session.targetPaceFrom(), session.targetPaceTo(), session.targetRpe(), session.instructions(), session.notes());
-            validateSession(request, new TrainingPlanModels.Plan(null, planRequest.name(), planRequest.goal(), planRequest.startDate(), planRequest.endDate(), planRequest.raceDate(), planRequest.targetTime(), planRequest.description()));
+            validateSession(request, new TrainingPlanModels.Plan(null, planRequest.name(), planRequest.goal(), planRequest.startDate(), planRequest.endDate(), planRequest.raceDate(), integer(planRequest.targetTime()), planRequest.description()));
             return request;
         }).toList();
 
         var candidate = new TrainingPlanModels.Plan(null, planRequest.name().trim(), planRequest.goal().trim(), planRequest.startDate(), planRequest.endDate(),
-                planRequest.raceDate(), planRequest.targetTime(), planRequest.description());
+                planRequest.raceDate(), integer(planRequest.targetTime()), planRequest.description());
         var duplicate = repository.findDuplicate(candidate);
         if (duplicate.isPresent() && !Boolean.TRUE.equals(document.replaceExisting())) {
             throw new TrainingPlanException(HttpStatus.CONFLICT, "DUPLICATE_TRAINING_PLAN", "Ein Trainingsplan mit diesem Namen, Ziel und Zeitraum ist bereits vorhanden. Ersetzen muss ausdrücklich bestätigt werden.");
@@ -185,7 +186,7 @@ class TrainingPlanService {
     private static void validatePlan(PlanRequest request) {
         if (request == null || blank(request.name()) || blank(request.goal()) || request.startDate() == null || request.endDate() == null
                 || request.endDate().isBefore(request.startDate()) || (request.raceDate() != null && !inRange(request.raceDate(), request.startDate(), request.endDate()))
-                || (request.targetTime() != null && request.targetTime() <= 0)) throw invalid("Trainingsplan: Name, Ziel und gültiger Zeitraum sind erforderlich; Wettkampfdatum und Zielzeit müssen zum Zeitraum passen.");
+                || !positiveInteger(request.targetTime())) throw invalid("Trainingsplan: Name, Ziel und gültiger Zeitraum sind erforderlich; Wettkampfdatum und Zielzeit müssen zum Zeitraum passen.");
     }
 
     private static void validatePhase(PhaseRequest phase, TrainingPlanModels.Plan plan) {
@@ -198,39 +199,42 @@ class TrainingPlanService {
         if (session == null || session.date() == null || !inRange(session.date(), plan.startDate(), plan.endDate())
                 || session.sport() == null || !SPORTS.contains(session.sport()) || session.sessionType() == null || !TYPES.contains(session.sessionType()) || blank(session.title())
                 || !positive(session.targetDistanceKm()) || !positive(session.targetPaceFrom()) || !positive(session.targetPaceTo())
-                || (session.targetDurationMinutes() != null && session.targetDurationMinutes() <= 0)
-                || (session.targetRpe() != null && (session.targetRpe() < 1 || session.targetRpe() > 10))
+                || !positiveInteger(session.targetDurationMinutes())
+                || (session.targetRpe() != null && (!positiveInteger(session.targetRpe()) || session.targetRpe().compareTo(BigDecimal.TEN) > 0))
                 || (session.targetPaceFrom() != null && session.targetPaceTo() != null && session.targetPaceFrom() > session.targetPaceTo())) {
             throw invalid("Trainingseinheit enthält ungültige Angaben (Datum, Sport, Typ, Distanz, Dauer, Pace oder RPE).");
         }
     }
 
     private static TrainingPlanModels.Session session(UUID id, UUID planId, SessionRequest request) {
-        return new TrainingPlanModels.Session(id, planId, request.date(), request.sport(), request.sessionType(), request.title().trim(), request.targetDistanceKm(), request.targetDurationMinutes(), request.targetPaceFrom(), request.targetPaceTo(), request.targetRpe(), request.instructions(), request.notes());
+        return new TrainingPlanModels.Session(id, planId, request.date(), request.sport(), request.sessionType(), request.title().trim(), request.targetDistanceKm(), integer(request.targetDurationMinutes()), request.targetPaceFrom(), request.targetPaceTo(), integer(request.targetRpe()), request.instructions(), request.notes());
     }
 
     private static boolean positive(Double value) { return value == null || (Double.isFinite(value) && value > 0); }
+    private static boolean positiveInteger(BigDecimal value) { return value == null || (value.signum() > 0 && value.stripTrailingZeros().scale() <= 0 && value.compareTo(BigDecimal.valueOf(Integer.MAX_VALUE)) <= 0); }
+    private static Integer integer(BigDecimal value) { return value == null ? null : value.intValueExact(); }
+    private static BigDecimal decimal(Integer value) { return value == null ? null : BigDecimal.valueOf(value); }
     private static boolean blank(String value) { return value == null || value.isBlank(); }
     private static boolean inRange(LocalDate date, LocalDate start, LocalDate end) { return !date.isBefore(start) && !date.isAfter(end); }
     private static TrainingPlanException invalid(String message) { return new TrainingPlanException(HttpStatus.BAD_REQUEST, "INVALID_TRAINING_PLAN", message); }
     private static TrainingPlanException notFound(String message) { return new TrainingPlanException(HttpStatus.NOT_FOUND, "TRAINING_PLAN_NOT_FOUND", message); }
 
-    record PlanRequest(String name, String goal, LocalDate startDate, LocalDate endDate, LocalDate raceDate, Integer targetTime, String description) { }
+    record PlanRequest(String name, String goal, LocalDate startDate, LocalDate endDate, LocalDate raceDate, BigDecimal targetTime, String description) { }
     record PhaseRequest(UUID id, String name, LocalDate startDate, LocalDate endDate, String description) { }
-    record SessionRequest(LocalDate date, String sport, String sessionType, String title, Double targetDistanceKm, Integer targetDurationMinutes,
-                          Double targetPaceFrom, Double targetPaceTo, Integer targetRpe, String instructions, String notes) { }
+    record SessionRequest(LocalDate date, String sport, String sessionType, String title, Double targetDistanceKm, BigDecimal targetDurationMinutes,
+                          Double targetPaceFrom, Double targetPaceTo, BigDecimal targetRpe, String instructions, String notes) { }
     record ImportDocument(Integer schemaVersion, ImportPlan plan, Boolean replaceExisting) {
         @JsonAnySetter void rejectUnknown(String name, Object value) { throw new IllegalArgumentException("Unbekanntes Importfeld: " + name); }
     }
-    record ImportPlan(String name, String goal, LocalDate startDate, LocalDate endDate, LocalDate raceDate, Integer targetTime, String description,
+    record ImportPlan(String name, String goal, LocalDate startDate, LocalDate endDate, LocalDate raceDate, BigDecimal targetTime, String description,
                       List<ImportPhase> phases, List<ImportSession> sessions) {
         @JsonAnySetter void rejectUnknown(String name, Object value) { throw new IllegalArgumentException("Unbekanntes Planfeld: " + name); }
     }
     record ImportPhase(String name, LocalDate startDate, LocalDate endDate, String description) {
         @JsonAnySetter void rejectUnknown(String name, Object value) { throw new IllegalArgumentException("Unbekanntes Phasenfeld: " + name); }
     }
-    record ImportSession(LocalDate date, String sport, String sessionType, String title, Double targetDistanceKm, Integer targetDurationMinutes,
-                         Double targetPaceFrom, Double targetPaceTo, Integer targetRpe, String instructions, String notes) {
+    record ImportSession(LocalDate date, String sport, String sessionType, String title, Double targetDistanceKm, BigDecimal targetDurationMinutes,
+                         Double targetPaceFrom, Double targetPaceTo, BigDecimal targetRpe, String instructions, String notes) {
         @JsonAnySetter void rejectUnknown(String name, Object value) { throw new IllegalArgumentException("Unbekanntes Einheitenfeld: " + name); }
     }
     record PlanDocument(int schemaVersion, ImportPlan plan) { }
