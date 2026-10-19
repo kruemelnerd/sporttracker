@@ -36,6 +36,19 @@ Optional `.env.example` nach `.env` kopieren und Werte anpassen. Die voreingeste
 
 Backend: `http://localhost:8080`. Frontend: `http://localhost:5173`. Das Frontend leitet `/api` über Vite an das Backend weiter.
 
+## Intervals.icu
+
+1. Intervals.icu öffnen und **Settings → Developer Settings** aufrufen.
+2. Einen persönlichen API-Key erstellen.
+3. Den Key als Backend-Environment-Variable setzen und den automatischen Import aktivieren:
+
+   ```bash
+   export INTERVALS_ICU_API_KEY=<your-api-key>
+   export INTERVALS_ICU_ENABLED=true
+   ```
+
+4. Das Backend starten. Der API-Key bleibt ausschließlich im Backend; der Sync läuft einseitig von Intervals.icu in die lokale Anwendung.
+
 ## Stoppen und Zurücksetzen
 
 ```bash
