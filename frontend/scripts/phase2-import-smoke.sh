@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 if [[ "${1:-}" != "--tracer" ]]; then
   echo "usage: $0 --tracer" >&2
@@ -7,21 +7,11 @@ if [[ "${1:-}" != "--tracer" ]]; then
 fi
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
-backend_pid=""
-frontend_pid=""
-cleanup() {
-  [[ -n "$frontend_pid" ]] && kill "$frontend_pid" 2>/dev/null || true
-  [[ -n "$backend_pid" ]] && kill "$backend_pid" 2>/dev/null || true
-}
-trap cleanup EXIT
+compose=(docker compose -p sporttracker-m4-e2e -f "$root/compose.e2e.yaml")
+"${compose[@]}" up -d --wait db
+"${compose[@]}" exec -T db psql -v ON_ERROR_STOP=1 -U running_dashboard_e2e -d running_dashboard_e2e \
+  -c "DO \$\$ BEGIN IF current_database() <> 'running_dashboard_e2e' OR current_user <> 'running_dashboard_e2e' THEN RAISE EXCEPTION 'Refusing smoke test outside isolated E2E database'; END IF; END \$\$;"
 
-docker compose -f "$root/compose.yaml" up -d db
-until docker compose -f "$root/compose.yaml" exec -T db pg_isready -U running_dashboard -d running_dashboard >/dev/null; do sleep 1; done
-(cd "$root/backend" && GRADLE_OPTS="${GRADLE_OPTS:+$GRADLE_OPTS }-Djdk.lang.Process.launchMechanism=VFORK" DATA_DIRECTORY="$root/.tmp-import-data" ./gradlew --no-daemon bootRun) >"$root/backend/import-smoke.log" 2>&1 & backend_pid=$!
-until curl --fail --silent http://127.0.0.1:8080/api/health >/dev/null; do sleep 1; done
-docker compose -f "$root/compose.yaml" exec -T db psql -U running_dashboard -d running_dashboard -c 'TRUNCATE activity, import_file, activity_record, lap RESTART IDENTITY CASCADE' >/dev/null
-(cd "$root/frontend" && npm run dev -- --host 127.0.0.1) >"$root/frontend/import-smoke.log" 2>&1 & frontend_pid=$!
-until curl --fail --silent http://127.0.0.1:5173/import >/dev/null; do sleep 1; done
-(cd "$root/frontend" && npx playwright test import-tracer.spec.ts)
-docker compose -f "$root/compose.yaml" exec -T db psql -U running_dashboard -d running_dashboard -Atc 'SELECT count(*) FROM activity' | grep -Eq '^[1-9][0-9]*$'
-test -n "$(find "$root/.tmp-import-data/originals" -type f -name '*.fit' -print -quit)"
+(cd "$root/frontend" && npx playwright test fit-upload.spec.ts)
+"${compose[@]}" exec -T db psql -v ON_ERROR_STOP=1 -U running_dashboard_e2e -d running_dashboard_e2e \
+  -Atc "SELECT count(*) FROM activity" | grep -Eq '^[2-9][0-9]*$|^[1-9][0-9]{2,}$'

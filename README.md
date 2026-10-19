@@ -4,7 +4,7 @@ Lokale Webanwendung zur Verwaltung und Auswertung eigener Lauftrainings aus Garm
 
 ## Voraussetzungen
 
-- Java 21
+- Java 25
 - Node.js 22.12 oder neuer und npm
 - Docker mit Docker Compose
 

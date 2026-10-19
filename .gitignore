@@ -1,4 +1,5 @@
 .idea/
+.env
 .opencode/node_modules/
 .opencode/memory/
 **/__pycache__/
