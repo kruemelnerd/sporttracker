@@ -25,6 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.core.task.TaskExecutor;
 
 @SpringBootTest(properties = "running-dashboard.data-directory=${java.io.tmpdir}/running-dashboard-intervals-sync-tests")
 class IntervalsIcuSyncServiceTests {
@@ -227,6 +228,39 @@ class IntervalsIcuSyncServiceTests {
             release.countDown();
             executor.shutdownNow();
         }
+    }
+
+    @Test
+    void asynchronousTriggerUsesTheSameSyncServiceAndReservesTheOnlyRun() {
+        var source = new FakeSource(List.of());
+        var sync = service(source);
+        var queued = new java.util.concurrent.atomic.AtomicReference<Runnable>();
+        TaskExecutor executor = queued::set;
+
+        assertTrue(sync.startAsync(executor));
+        assertFalse(sync.synchronize().started());
+        queued.get().run();
+
+        assertEquals(1, source.listCalls);
+        assertTrue(sync.lastResult().started());
+    }
+
+    @Test
+    void startupAndScheduledTriggersOnlyEnqueueTheSharedSyncService() {
+        var source = new FakeSource(List.of());
+        var sync = service(source);
+        var queued = new java.util.ArrayDeque<Runnable>();
+        var triggers = new IntervalsIcuSyncTriggers(sync, queued::add);
+
+        triggers.onApplicationReady();
+        assertTrue(sync.running());
+        triggers.onSchedule();
+        assertEquals(1, queued.size());
+        queued.remove().run();
+
+        assertEquals(1, source.listCalls);
+        assertFalse(sync.running());
+        assertTrue(sync.lastResult().started());
     }
 
     private IntervalsIcuSyncService service(ActivityImportSource source) {

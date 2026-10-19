@@ -12,9 +12,12 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.GZIPInputStream;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
 
 @Service
+@ConditionalOnBean(ImportService.class)
 public class IntervalsIcuSyncService {
     private final ActivityImportSource source;
     private final ImportService imports;
@@ -45,6 +48,26 @@ public class IntervalsIcuSyncService {
     public SyncResult synchronize() {
         if (!properties.configured()) return SyncResult.notConfigured();
         if (!running.compareAndSet(false, true)) return SyncResult.notStarted("A sync is already running.");
+        return runClaimed();
+    }
+
+    public boolean startAsync(TaskExecutor executor) {
+        if (!properties.configured() || !running.compareAndSet(false, true)) return false;
+        Instant now = clock.instant();
+        if (retryAfterUntil != null && now.isBefore(retryAfterUntil)) {
+            running.set(false);
+            return false;
+        }
+        try {
+            executor.execute(this::runClaimed);
+            return true;
+        } catch (RuntimeException exception) {
+            running.set(false);
+            throw exception;
+        }
+    }
+
+    private SyncResult runClaimed() {
         try {
             Instant now = clock.instant();
             if (retryAfterUntil != null && now.isBefore(retryAfterUntil)) return SyncResult.notStarted("Sync paused until the upstream rate limit clears.");
