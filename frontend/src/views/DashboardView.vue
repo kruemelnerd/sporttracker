@@ -15,7 +15,7 @@
         <MetricCard label="Trainingszeit" :value="duration(summary.metrics.durationSeconds)" value-test-id="total-time" />
         <MetricCard label="Ø Distanz / Lauf" :value="distance(summary.metrics.averageDistanceMeters)" value-test-id="average-distance" />
         <MetricCard label="Ø Pace" :value="pace(summary.metrics.paceSecondsPerKm)" value-test-id="average-pace" emphasis />
-        <MetricCard label="Höhenmeter" :value="elevation(summary.metrics.ascentMeters)" value-test-id="total-ascent" />
+        <MetricCard label="Höhenmeter" :value="elevation(summary.metrics.ascentMeters, summary.metrics.ascentIncomplete)" value-test-id="total-ascent" />
       </dl>
 
       <section class="week-panels" aria-label="Wochenübersicht der letzten sechs Wochen">
@@ -97,7 +97,7 @@ const pace = (secondsPerKm: number | null) => {
   const totalSeconds = Math.round(secondsPerKm)
   return `${Math.floor(totalSeconds / 60)}:${String(totalSeconds % 60).padStart(2, '0')} min/km`
 }
-const elevation = (meters: number | null) => meters === null ? '–' : `${Math.round(meters)} m`
+const elevation = (meters: number | null, incomplete: boolean) => incomplete ? 'Unvollständig' : meters === null ? '–' : `${Math.round(meters)} m`
 const heartRate = (bpm: number | null) => bpm === null ? '–' : `${bpm} bpm`
 const trainingType = (subSport: string | null) => subSport ? subSport.replaceAll('_', ' ') : 'Lauf'
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value))

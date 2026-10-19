@@ -32,6 +32,15 @@ describe('DashboardView', () => {
     expect(wrapper.text()).not.toMatch(/NaN|undefined|null/)
   })
 
+  it('labels elevation totals incomplete when any run has no elevation', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify([
+      { id: 12, sport: 'running', subSport: null, startTime: new Date().toISOString(), elapsedSeconds: 3600, distanceMeters: 10000, averageHeartRate: 150, ascentMeters: 200 },
+      { id: 13, sport: 'running', subSport: null, startTime: new Date().toISOString(), elapsedSeconds: 3600, distanceMeters: 10000, averageHeartRate: 150, ascentMeters: null },
+    ]), { status: 200 }))
+    const wrapper = mount(DashboardView, { global: { stubs: { RouterLink: true } } })
+    await vi.waitFor(() => expect(wrapper.get('[data-testid="total-ascent"]').text()).toContain('Unvollständig'))
+  })
+
   it('provides a visible link from the dashboard to FIT import', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('[]', { status: 200 }))
     const wrapper = mount(DashboardView, { global: { stubs: { RouterLink: { template: '<a :href="to"><slot /></a>', props: ['to'] } } } })

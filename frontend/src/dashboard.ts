@@ -20,6 +20,7 @@ export function summarizeActivities(source: Activity[], now: Date) {
   const durationSeconds = activities.length && activities.every(({ elapsedSeconds }) => elapsedSeconds !== null)
     ? durationValues.reduce((sum, value) => sum + value, 0) : null
   const ascentValues = activities.flatMap(({ ascentMeters }) => ascentMeters === null ? [] : [ascentMeters])
+  const ascentComplete = activities.length > 0 && activities.every(({ ascentMeters }) => ascentMeters !== null)
   const weeks = Array.from({ length: 6 }, (_, index) => {
     const weekStart = new Date(start.getTime() + index * WEEK_MS)
     const runs = activities.filter(({ startTime }) => {
@@ -47,7 +48,8 @@ export function summarizeActivities(source: Activity[], now: Date) {
       paceSecondsPerKm: distanceMeters !== null && distanceMeters > 0 && durationSeconds !== null && activities.every(({ elapsedSeconds, distanceMeters }) => elapsedSeconds !== null && distanceMeters !== null)
         ? durationSeconds / (distanceMeters / 1000)
         : null,
-      ascentMeters: ascentValues.length ? ascentValues.reduce((sum, value) => sum + value, 0) : null,
+      ascentMeters: ascentComplete ? ascentValues.reduce((sum, value) => sum + value, 0) : null,
+      ascentIncomplete: ascentValues.length > 0 && !ascentComplete,
     },
   }
 }

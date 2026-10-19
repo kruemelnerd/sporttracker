@@ -156,7 +156,7 @@ import {
   type TrainingPlan,
   type TrainingPlanSummary,
 } from '../trainingPlansApi'
-import { initialPlanWeek, isoWeekLabel, phaseForWeek, shiftWeek, summarizeWeek } from '../trainingPlan'
+import { initialPlanWeek, isoWeekLabel, mondayOfLocalDate, phaseForWeek, shiftWeek, summarizeWeek } from '../trainingPlan'
 import { parseTrainingPlanDocument, type TrainingPlanDocument } from '../trainingPlanJson'
 
 const loading = ref(true)
@@ -184,8 +184,8 @@ const sessionTypes = [
   { value: 'RACE', label: 'Wettkampf' }, { value: 'OTHER', label: 'Sonstiges' },
 ] as const
 const today = localDateString(new Date())
-const firstWeek = computed(() => plan.value ? monday(plan.value.startDate) : '')
-const lastWeek = computed(() => plan.value ? monday(plan.value.endDate) : '')
+const firstWeek = computed(() => plan.value ? mondayOfLocalDate(plan.value.startDate) : '')
+const lastWeek = computed(() => plan.value ? mondayOfLocalDate(plan.value.endDate) : '')
 const weekEnd = computed(() => addDays(weekStart.value, 6))
 const phase = computed(() => plan.value ? phaseForWeek(plan.value.phases ?? [], weekStart.value) : null)
 const metrics = computed(() => summarizeWeek(sessions.value))
@@ -412,11 +412,6 @@ function localDate(value: string) {
 function addDays(value: string, amount: number) {
   const date = localDate(value)
   date.setDate(date.getDate() + amount)
-  return localDateString(date)
-}
-function monday(value: string) {
-  const date = localDate(value)
-  date.setDate(date.getDate() - (date.getDay() + 6) % 7)
   return localDateString(date)
 }
 function formatDate(value: string, weekday = false) {

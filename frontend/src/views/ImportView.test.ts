@@ -76,6 +76,26 @@ describe('ImportView', () => {
     expect(wrapper.get('[data-testid="intervals-sync"]').attributes('disabled')).toBeDefined()
   })
 
+  it('retries status polling after a transient failure while syncing', async () => {
+    vi.useFakeTimers()
+    getIntervalsIcuStatus
+      .mockResolvedValueOnce(status({ running: true }))
+      .mockRejectedValueOnce(new Error('temporary'))
+      .mockResolvedValueOnce(status())
+    const wrapper = mount(ImportView)
+    await settle()
+
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(wrapper.get('[data-testid="intervals-error"]').text()).toContain('Status konnte nicht geladen werden')
+    await vi.advanceTimersByTimeAsync(2000)
+    await settle()
+
+    expect(getIntervalsIcuStatus).toHaveBeenCalledTimes(3)
+    expect(wrapper.text()).not.toContain('Synchronisierung läuft')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('shows the last sync error', async () => {
     getIntervalsIcuStatus.mockResolvedValue(status({ lastResult: {
       started: true, checked: 1, imported: 0, alreadyPresent: 0, skipped: 0, failed: 1,

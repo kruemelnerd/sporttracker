@@ -16,7 +16,7 @@ describe('six-week dashboard aggregation', () => {
 
   it('aggregates totals and computes pace from total time over total distance', () => {
     const result = summarizeActivities(activities, now)
-    expect(result.metrics).toEqual({ runCount: 3, distanceMeters: 18000, durationSeconds: 6400, averageDistanceMeters: 6000, paceSecondsPerKm: 6400 / 18, ascentMeters: 230 })
+    expect(result.metrics).toEqual({ runCount: 3, distanceMeters: 18000, durationSeconds: 6400, averageDistanceMeters: 6000, paceSecondsPerKm: 6400 / 18, ascentMeters: null, ascentIncomplete: true })
   })
 
   it('returns six chronological weekly buckets and newest-first activities', () => {

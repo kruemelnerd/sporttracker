@@ -118,6 +118,7 @@ async function loadIntervalsStatus() {
     pollWhileRunning()
   } catch {
     intervalsError.value = 'Intervals.icu-Status konnte nicht geladen werden.'
+    pollWhileRunning()
   } finally {
     intervalsLoading.value = false
   }
