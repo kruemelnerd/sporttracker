@@ -7,11 +7,13 @@ import java.io.PushbackInputStream;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.zip.GZIPInputStream;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,7 @@ public class IntervalsIcuSyncService {
     private final ActivityImportSourceRepository mappings;
     private final IntervalsIcuProperties properties;
     private final Clock clock;
+    private final ZoneId activityDateZone;
     private final AtomicBoolean running = new AtomicBoolean();
     private volatile Instant lastAttemptAt;
     private volatile Instant lastSuccessfulSyncAt;
@@ -32,17 +35,24 @@ public class IntervalsIcuSyncService {
 
     @Autowired
     public IntervalsIcuSyncService(ActivityImportSource source, ImportService imports,
-                                   ActivityImportSourceRepository mappings, IntervalsIcuProperties properties) {
-        this(source, imports, mappings, properties, Clock.systemUTC());
+                                   ActivityImportSourceRepository mappings, IntervalsIcuProperties properties,
+                                   @Value("${running-dashboard.display-timezone:Europe/Berlin}") ZoneId activityDateZone) {
+        this(source, imports, mappings, properties, Clock.systemUTC(), activityDateZone);
     }
 
     IntervalsIcuSyncService(ActivityImportSource source, ImportService imports,
                             ActivityImportSourceRepository mappings, IntervalsIcuProperties properties, Clock clock) {
+        this(source, imports, mappings, properties, clock, clock.getZone());
+    }
+
+    IntervalsIcuSyncService(ActivityImportSource source, ImportService imports,
+                            ActivityImportSourceRepository mappings, IntervalsIcuProperties properties, Clock clock, ZoneId activityDateZone) {
         this.source = source;
         this.imports = imports;
         this.mappings = mappings;
         this.properties = properties;
         this.clock = clock;
+        this.activityDateZone = activityDateZone;
     }
 
     public SyncResult synchronize() {
@@ -72,7 +82,7 @@ public class IntervalsIcuSyncService {
             Instant now = clock.instant();
             if (retryAfterUntil != null && now.isBefore(retryAfterUntil)) return SyncResult.notStarted("Sync paused until the upstream rate limit clears.");
             lastAttemptAt = now;
-            LocalDate newest = LocalDate.now(clock);
+            LocalDate newest = LocalDate.now(clock.withZone(activityDateZone));
             LocalDate oldest = lastSuccessfulSyncAt == null ? newest.minusDays(properties.initialLookbackDays()) : newest.minusDays(14);
             var counts = new Counts();
             List<ActivityResult> results = new ArrayList<>();

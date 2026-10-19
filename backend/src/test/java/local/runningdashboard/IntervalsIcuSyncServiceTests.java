@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -202,6 +203,18 @@ class IntervalsIcuSyncServiceTests {
         assertEquals(LocalDate.parse("2026-07-21"), source.windows.get(0)[0]);
         assertEquals(LocalDate.parse("2026-10-05"), source.windows.get(1)[0]);
         assertEquals(LocalDate.parse("2026-10-19"), source.windows.get(0)[1]);
+    }
+
+    @Test
+    void usesTheConfiguredLocalCalendarDateForIntervalsDateRanges() {
+        var source = new FakeSource(List.of());
+        var properties = new IntervalsIcuProperties(true, "test-key", "http://127.0.0.1:1", Duration.ofMinutes(15), 90);
+        var sync = new IntervalsIcuSyncService(source, imports, mappings, properties,
+                Clock.fixed(Instant.parse("2026-10-19T23:30:00Z"), ZoneOffset.UTC), ZoneId.of("Europe/Berlin"));
+
+        sync.synchronize();
+
+        assertEquals(LocalDate.parse("2026-10-20"), source.windows.getFirst()[1]);
     }
 
     @Test
