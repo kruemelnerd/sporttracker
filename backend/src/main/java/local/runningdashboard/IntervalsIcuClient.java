@@ -19,8 +19,10 @@ import org.springframework.web.client.RestClientResponseException;
 @Component
 public class IntervalsIcuClient {
     private final RestClient client;
+    private final int maxDownloadBytes;
 
-    public IntervalsIcuClient(IntervalsIcuProperties properties) {
+    public IntervalsIcuClient(IntervalsIcuProperties properties, ImportProperties importProperties) {
+        this.maxDownloadBytes = (int) Math.min(importProperties.maxRequestBytes(), Integer.MAX_VALUE - 1L);
         String credentials = Base64.getEncoder().encodeToString(("API_KEY:" + properties.apiKey()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         this.client = RestClient.builder().baseUrl(properties.baseUrl())
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Basic " + credentials)
@@ -48,7 +50,11 @@ public class IntervalsIcuClient {
         try {
             return client.get().uri("/api/v1/activity/{id}/file", activityId).exchange((request, response) -> {
                 if (response.getStatusCode().isError()) throw exception(response.getStatusCode().value(), response.getHeaders().getFirst("Retry-After"));
-                return new DownloadedFile(response.getBody().readAllBytes(), response.getHeaders().getContentType() == null ? null : response.getHeaders().getContentType().toString(), response.getHeaders().getFirst(HttpHeaders.CONTENT_ENCODING));
+                byte[] body;
+                try { body = response.getBody().readNBytes(maxDownloadBytes + 1); }
+                catch (java.io.IOException failure) { throw new IntervalsIcuClientException("NETWORK_ERROR", null); }
+                if (body.length > maxDownloadBytes) throw new IntervalsIcuClientException("FILE_TOO_LARGE", null);
+                return new DownloadedFile(body, response.getHeaders().getContentType() == null ? null : response.getHeaders().getContentType().toString(), response.getHeaders().getFirst(HttpHeaders.CONTENT_ENCODING));
             });
         } catch (IntervalsIcuClientException exception) {
             throw exception;

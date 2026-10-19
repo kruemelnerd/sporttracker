@@ -60,6 +60,18 @@ class IntervalsIcuClientTests {
     }
 
     @Test
+    void boundsTheDownloadedResponseBody() throws Exception {
+        startServer(exchange -> respond(exchange, 200, new byte[5], "application/gzip"));
+        var properties = new IntervalsIcuProperties(true, "test-key", "http://localhost:" + server.getAddress().getPort(), Duration.ofMinutes(15), 90);
+        var client = new IntervalsIcuClient(properties, new ImportProperties(10, 4, 4));
+
+        var error = assertThrows(IntervalsIcuClientException.class, () -> client.downloadActivityFile("abc"));
+
+        assertEquals("FILE_TOO_LARGE", error.code());
+        assertFalse(error.getMessage().contains("test-key"));
+    }
+
+    @Test
     void mapsHttpErrorsToSafeMessagesAndHonorsRetryAfter() throws Exception {
         for (var response : new Object[][] {
                 {401, "INVALID_API_KEY"}, {403, "ACCESS_DENIED"}, {404, "FILE_NOT_AVAILABLE"},
@@ -96,7 +108,7 @@ class IntervalsIcuClientTests {
         var properties = new IntervalsIcuProperties(true, "never-in-message", "http://127.0.0.1:" + port, Duration.ofMinutes(15), 90);
 
         var error = assertThrows(IntervalsIcuClientException.class,
-                () -> new IntervalsIcuClient(properties).listActivities(LocalDate.now(), LocalDate.now()));
+                () -> new IntervalsIcuClient(properties, new ImportProperties(10, 10_485_760, 104_857_600)).listActivities(LocalDate.now(), LocalDate.now()));
 
         assertEquals("NETWORK_ERROR", error.code());
         assertFalse(error.getMessage().contains("never-in-message"));
@@ -104,7 +116,7 @@ class IntervalsIcuClientTests {
 
     private IntervalsIcuClient client(String key) {
         var properties = new IntervalsIcuProperties(true, key, "http://localhost:" + server.getAddress().getPort(), Duration.ofMinutes(15), 90);
-        return new IntervalsIcuClient(properties);
+        return new IntervalsIcuClient(properties, new ImportProperties(10, 10_485_760, 104_857_600));
     }
 
     private void startServer(com.sun.net.httpserver.HttpHandler handler) throws Exception {

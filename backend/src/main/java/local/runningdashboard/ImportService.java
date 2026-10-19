@@ -50,9 +50,18 @@ public class ImportService {
     private ImportOutcome importFile(MultipartFile file) {
         if (file == null || file.isEmpty()) return ImportOutcome.invalid("EMPTY_FILE");
         if (file.getSize() > properties.maxFileBytes()) return ImportOutcome.invalid("FILE_TOO_LARGE");
+        try {
+            return importFit(file.getInputStream());
+        } catch (Exception exception) {
+            return ImportOutcome.failed();
+        }
+    }
+
+    public ImportOutcome importFit(InputStream fitInput) {
+        if (fitInput == null) return ImportOutcome.invalid("EMPTY_FILE");
         StagedFile staged = null;
         try {
-            staged = stage(file);
+            staged = stage(fitInput);
             String hash = staged.hash();
             Long hashMatch = importedActivity(hash);
             if (hashMatch != null) return ImportOutcome.duplicate(hashMatch);
@@ -85,14 +94,14 @@ public class ImportService {
         }
     }
 
-    private StagedFile stage(MultipartFile file) throws Exception {
+    private StagedFile stage(InputStream input) throws Exception {
         Path temporaryDirectory = dataDirectory.resolve(".incoming").normalize();
         if (!temporaryDirectory.startsWith(dataDirectory)) throw new IOException("invalid temporary path");
         Files.createDirectories(temporaryDirectory);
         Path path = Files.createTempFile(temporaryDirectory, "fit-", ".tmp");
         MessageDigest digest = MessageDigest.getInstance("SHA-256");
         long size = 0;
-        try (InputStream input = file.getInputStream(); var output = Files.newOutputStream(path)) {
+        try (input; var output = Files.newOutputStream(path)) {
             byte[] buffer = new byte[8192];
             for (int read; (read = input.read(buffer)) >= 0;) {
                 size += read;
