@@ -8,6 +8,7 @@ import java.util.Set;
 import java.util.UUID;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -76,7 +77,11 @@ class TrainingPlanService {
         var plan = requiredPlan(planId);
         validateSession(request, plan);
         var session = session(UUID.randomUUID(), planId, request);
-        repository.insertSession(session);
+        try {
+            repository.insertSession(session);
+        } catch (DuplicateKeyException duplicate) {
+            throw new TrainingPlanException(HttpStatus.CONFLICT, "DUPLICATE_PLANNED_SESSION", "Diese Trainingseinheit ist bereits geplant.");
+        }
         return session;
     }
 

@@ -99,4 +99,21 @@ class TrainingPlanControllerTests {
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").isNotEmpty());
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM planned_session WHERE training_plan_id = ?", Integer.class, java.util.UUID.fromString(planId)));
     }
+
+    @Test
+    void rejectsRepeatedPlannedSessionCreation() throws Exception {
+        mvc.perform(post("/api/training-plans").contentType(MediaType.APPLICATION_JSON).content("""
+                {"name":"m6-test-duplicate-session","goal":"Race","startDate":"2027-03-01","endDate":"2027-03-20"}
+                """)).andExpect(status().isCreated());
+        String planId = jdbc.queryForObject("SELECT id::text FROM training_plan WHERE name = ?", String.class, "m6-test-duplicate-session");
+        String session = """
+                {"date":"2027-03-15","sport":"RUN","sessionType":"EASY","title":"Locker"}
+                """;
+
+        mvc.perform(post("/api/training-plans/{id}/sessions", planId).contentType(MediaType.APPLICATION_JSON).content(session))
+                .andExpect(status().isCreated());
+        mvc.perform(post("/api/training-plans/{id}/sessions", planId).contentType(MediaType.APPLICATION_JSON).content(session))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("DUPLICATE_PLANNED_SESSION"));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM planned_session WHERE training_plan_id = ?", Integer.class, java.util.UUID.fromString(planId)));
+    }
 }

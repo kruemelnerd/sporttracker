@@ -62,9 +62,12 @@ Der Datenbestand liegt im benannten Volume `running-dashboard-postgres` und blei
 ## Tests
 
 ```bash
-cd backend && ./gradlew build
+docker compose -p sporttracker-m4-e2e -f compose.e2e.yaml up -d --wait db
+cd backend && ./gradlew test
 cd frontend && npm run test:unit && npm run build
 ```
+
+Backend integration tests always use the isolated `running_dashboard_e2e` database and reset its application tables only after checking the database and user. They never use the development database.
 
 ## Phase-1-Smoke
 

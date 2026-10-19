@@ -2,6 +2,7 @@ package local.runningdashboard;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Duration;
+import java.net.http.HttpClient;
 import java.time.LocalDate;
 import java.time.Instant;
 import java.time.ZonedDateTime;
@@ -12,19 +13,29 @@ import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 
 @Component
 public class IntervalsIcuClient {
     private final RestClient client;
     private final int maxDownloadBytes;
 
+    @Autowired
     public IntervalsIcuClient(IntervalsIcuProperties properties, ImportProperties importProperties) {
+        this(properties, importProperties, Duration.ofSeconds(5), Duration.ofSeconds(30));
+    }
+
+    IntervalsIcuClient(IntervalsIcuProperties properties, ImportProperties importProperties, Duration connectTimeout, Duration responseTimeout) {
         this.maxDownloadBytes = (int) Math.min(importProperties.maxRequestBytes(), Integer.MAX_VALUE - 1L);
         String credentials = Base64.getEncoder().encodeToString(("API_KEY:" + properties.apiKey()).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var requestFactory = new JdkClientHttpRequestFactory(HttpClient.newBuilder().connectTimeout(connectTimeout).build());
+        requestFactory.setReadTimeout(responseTimeout);
         this.client = RestClient.builder().baseUrl(properties.baseUrl())
+                .requestFactory(requestFactory)
                 .defaultHeader(HttpHeaders.AUTHORIZATION, "Basic " + credentials)
                 .defaultHeader(HttpHeaders.USER_AGENT, "running-dashboard/1.0")
                 .build();

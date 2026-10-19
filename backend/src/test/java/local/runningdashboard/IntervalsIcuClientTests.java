@@ -114,6 +114,21 @@ class IntervalsIcuClientTests {
         assertFalse(error.getMessage().contains("never-in-message"));
     }
 
+    @Test
+    void timesOutWhenTheServerDoesNotRespond() throws Exception {
+        startServer(exchange -> {
+            try { Thread.sleep(250); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            respond(exchange, 200, "[]".getBytes(StandardCharsets.UTF_8), "application/json");
+        });
+        var properties = new IntervalsIcuProperties(true, "key", "http://127.0.0.1:" + server.getAddress().getPort(), Duration.ofMinutes(15), 90);
+        var client = new IntervalsIcuClient(properties, new ImportProperties(10, 10_485_760, 104_857_600), Duration.ofMillis(100), Duration.ofMillis(30));
+
+        var error = assertThrows(IntervalsIcuClientException.class,
+                () -> client.listActivities(LocalDate.now(), LocalDate.now()));
+
+        assertEquals("NETWORK_ERROR", error.code());
+    }
+
     private IntervalsIcuClient client(String key) {
         var properties = new IntervalsIcuProperties(true, key, "http://localhost:" + server.getAddress().getPort(), Duration.ofMinutes(15), 90);
         return new IntervalsIcuClient(properties, new ImportProperties(10, 10_485_760, 104_857_600));

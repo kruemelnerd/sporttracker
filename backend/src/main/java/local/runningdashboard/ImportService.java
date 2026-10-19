@@ -86,7 +86,8 @@ public class ImportService {
         } catch (IOException exception) {
             return ImportOutcome.invalid(exception.getMessage() != null && exception.getMessage().contains("exactly one session") ? "MULTIPLE_ACTIVITIES" : "INVALID_FIT");
         } catch (DataIntegrityViolationException exception) {
-            return ImportOutcome.duplicate(staged == null ? null : importedActivity(staged.hash()));
+            Long duplicateId = staged == null ? null : importedActivity(staged.hash());
+            return duplicateId == null ? ImportOutcome.failed() : ImportOutcome.duplicate(duplicateId);
         } catch (Exception exception) {
             return ImportOutcome.failed();
         } finally {

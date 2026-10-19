@@ -83,6 +83,22 @@ class ImportIdentityTests {
     }
 
     @Test
+    void classifiesNonDuplicateIntegrityViolationsAsFailed() {
+        var decoded = new GarminFitFixtureAdapter.DecodedActivity("running", null, Instant.parse("2026-01-02T10:00:00Z"),
+                600d, 600d, -1d, 1.66d, null, null, null, null, null, List.of(), List.of());
+        var imports = new ImportService(new GarminFitFixtureAdapter() {
+            @Override public DecodedActivity decode(InputStream ignored) { return decoded; }
+        }, jdbc, new TransactionTemplate(transactionManager),
+                Path.of(System.getProperty("java.io.tmpdir"), "running-dashboard-identity-tests").toString(),
+                new ImportProperties(10, 10_485_760, 104_857_600));
+
+        var outcome = imports.importFiles(List.of(file("invalid-measurement.fit", new byte[] {4}))).outcomes().getFirst();
+
+        assertEquals("FAILED", outcome.status());
+        assertEquals("IMPORT_FAILED", outcome.code());
+    }
+
+    @Test
     void sourceMappingsAreUniqueAndReferenceAnExistingActivity() {
         Long activityId = jdbc.queryForObject("INSERT INTO activity (sport, start_time) VALUES ('running', ?) RETURNING id",
                 Long.class, java.sql.Timestamp.from(Instant.parse("2026-01-01T10:00:00Z")));
