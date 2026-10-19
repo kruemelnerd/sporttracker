@@ -28,7 +28,7 @@ Running Dashboard ist eine lokale Webanwendung zur Verwaltung und Auswertung eig
 
 | Technology | Version | Purpose | Why |
 |------------|---------|---------|-----|
-| Java | 21 LTS | Backend runtime and language | Conservative LTS baseline; Spring Boot 4.x requires Java 17+ and this avoids adopting a newer non-LTS runtime for a local data application. |
+| Java | 25 LTS | Backend runtime and language | Current configured Gradle toolchain and LTS baseline for the local Spring Boot application. |
 | Spring Boot | 4.1.1 (pin latest stable patch when implementation starts) | REST backend, configuration, embedded server | Current official Spring project release; gives a conventional single-process application without microservice overhead. |
 | Spring Web MVC | Spring Boot-managed | Internal HTTP API | REST endpoints are sufficient for the Vue frontend; no public API, OAuth, or reactive stack is needed. |
 | Gradle Kotlin DSL | 9.x, wrapper pinned | Build and dependency management | Prefer one reproducible wrapper-based build; Kotlin DSL is concise and works with current Boot support. Maven 3.6.3+ remains a valid alternative if team familiarity wins. |
@@ -76,7 +76,7 @@ Running Dashboard ist eine lokale Webanwendung zur Verwaltung und Auswertung eig
 
 | Category | Recommended | Alternative | Why Not |
 |----------|-------------|-------------|---------|
-| Backend runtime | Java 21 + Spring Boot 4.1.x | Java 25 or Boot 3.5.x | Newer Java may be fine but gives less conservative runtime compatibility; Boot 3.5 is viable when an existing Java 17 ecosystem or dependency blocks Boot 4, but should not be selected without a concrete blocker. |
+| Backend runtime | Java 25 + Spring Boot 4.1.x | Java 21 or Boot 3.5.x | Java 21 is an alternative for a constrained runtime; Boot 3.5 is viable when an existing ecosystem or dependency blocks Boot 4, but should not be selected without a concrete blocker. |
 | Build | Gradle Kotlin DSL | Maven | Maven is equally supportable and may be preferable for team convention. Do not maintain both build systems. |
 | ORM access | JPA for aggregates + SQL projections | jOOQ or JDBC everywhere | jOOQ is attractive for query-heavy systems but adds code-generation/setup; plain JDBC everywhere loses useful aggregate mapping. Revisit if dashboard SQL becomes complex. |
 | Schema migration | Flyway | Liquibase | Liquibase is valid, but SQL-first Flyway is less ceremony for a single local PostgreSQL schema. |

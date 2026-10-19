@@ -28,6 +28,7 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    outputs.upToDateWhen { false }
     systemProperty("spring.datasource.url", "jdbc:postgresql://127.0.0.1:55432/running_dashboard_e2e")
     systemProperty("spring.datasource.username", "running_dashboard_e2e")
     systemProperty("spring.datasource.password", "running_dashboard_e2e")

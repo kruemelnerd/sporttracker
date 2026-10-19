@@ -18,6 +18,8 @@ import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import com.sun.net.httpserver.HttpServer;
+import java.net.InetSocketAddress;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,6 +40,7 @@ class IntervalsIcuSyncServiceTests {
     @Autowired private ActivityImportSourceRepository mappings;
 
     private byte[] fit;
+    private HttpServer mockHttp;
 
     @BeforeEach
     void removeFixtureAndReadBytes() throws Exception {
@@ -48,6 +51,26 @@ class IntervalsIcuSyncServiceTests {
     @AfterEach
     void cleanupFixture() {
         jdbc.update("DELETE FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", FIXTURE_HASH);
+        if (mockHttp != null) { mockHttp.stop(0); mockHttp = null; }
+    }
+
+    @Test
+    void synchronizesThroughTheIntervalsHttpClientUsingMockedHttp() throws Exception {
+        mockHttp = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        mockHttp.createContext("/api/v1/athlete/0/activities", exchange -> respond(exchange, 200,
+                "[{\"id\":\"mock-http\",\"type\":\"Run\"}]".getBytes(java.nio.charset.StandardCharsets.UTF_8), "application/json"));
+        byte[] gzipFit = gzip(fit);
+        mockHttp.createContext("/api/v1/activity/mock-http/file", exchange -> respond(exchange, 200, gzipFit, "application/gzip"));
+        mockHttp.start();
+        var properties = new IntervalsIcuProperties(true, "test-key", "http://127.0.0.1:" + mockHttp.getAddress().getPort(), Duration.ofMinutes(15), 90);
+        var client = new IntervalsIcuClient(properties, new ImportProperties(10, 10_485_760, 104_857_600));
+        var sync = service(new IntervalsIcuActivitySource(client));
+
+        var result = sync.synchronize();
+
+        assertEquals(1, result.imported());
+        assertEquals(1, activityCount());
+        assertTrue(mappings.findActivityId("INTERVALS_ICU", "mock-http").isPresent());
     }
 
     @Test
@@ -298,6 +321,12 @@ class IntervalsIcuSyncServiceTests {
         var output = new ByteArrayOutputStream();
         try (var gzip = new java.util.zip.GZIPOutputStream(output)) { gzip.write(bytes); }
         return output.toByteArray();
+    }
+
+    private static void respond(com.sun.net.httpserver.HttpExchange exchange, int status, byte[] body, String contentType) throws java.io.IOException {
+        exchange.getResponseHeaders().set("Content-Type", contentType);
+        exchange.sendResponseHeaders(status, body.length);
+        try (var output = exchange.getResponseBody()) { output.write(body); }
     }
 
     private static class FakeSource implements ActivityImportSource {

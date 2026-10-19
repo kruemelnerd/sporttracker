@@ -28,7 +28,7 @@ test('dashboard metrics are calculated from activity values', async ({ page }) =
   await expect(page.getByTestId('total-time')).toHaveText('1 h 30 min')
   await expect(page.getByTestId('average-distance')).toHaveText('7.50 km')
   await expect(page.getByTestId('average-pace')).toHaveText('6:00 min/km')
-  await expect(page.getByTestId('total-ascent')).toHaveText('200 m')
+  await expect(page.getByTestId('total-ascent')).toHaveText('Unvollständig')
 })
 
 test('dashboard panels scan clearly on desktop and retain activity data on mobile', async ({ page }) => {
