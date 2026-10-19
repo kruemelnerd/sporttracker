@@ -54,19 +54,20 @@ public class ImportService {
         try {
             staged = stage(file);
             String hash = staged.hash();
-            if (Boolean.TRUE.equals(jdbc.queryForObject("SELECT EXISTS (SELECT 1 FROM import_file WHERE sha256 = ?)", Boolean.class, hash))) {
-                return ImportOutcome.duplicate();
-            }
+            Long hashMatch = importedActivity(hash);
+            if (hashMatch != null) return ImportOutcome.duplicate(hashMatch);
             GarminFitFixtureAdapter.DecodedActivity decoded;
             try (InputStream input = Files.newInputStream(staged.path())) {
                 decoded = adapter.decode(input);
             }
             if (!"running".equals(decoded.sport())) return ImportOutcome.skipped();
-            Long existing = existingActivity(decoded);
-            if (existing != null) {
-                jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes) VALUES (?, ?, ?)", existing, hash, staged.size());
-                return ImportOutcome.duplicate();
+            List<Long> existing = existingActivities(decoded);
+            if (existing.size() == 1) {
+                Long activityId = existing.getFirst();
+                jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes) VALUES (?, ?, ?)", activityId, hash, staged.size());
+                return ImportOutcome.duplicate(activityId);
             }
+            if (existing.size() > 1) return ImportOutcome.ambiguousDuplicate();
             StagedFile committedStaged = staged;
             Long activityId = transactions.execute(status -> persist(decoded, hash, committedStaged.size()));
             if (activityId == null) return ImportOutcome.failed();
@@ -76,7 +77,7 @@ public class ImportService {
         } catch (IOException exception) {
             return ImportOutcome.invalid(exception.getMessage() != null && exception.getMessage().contains("exactly one session") ? "MULTIPLE_ACTIVITIES" : "INVALID_FIT");
         } catch (DataIntegrityViolationException exception) {
-            return ImportOutcome.duplicate();
+            return ImportOutcome.duplicate(staged == null ? null : importedActivity(staged.hash()));
         } catch (Exception exception) {
             return ImportOutcome.failed();
         } finally {
@@ -106,7 +107,7 @@ public class ImportService {
         return new StagedFile(path, HexFormat.of().formatHex(digest.digest()), size);
     }
 
-    private Long existingActivity(GarminFitFixtureAdapter.DecodedActivity decoded) {
+    private List<Long> existingActivities(GarminFitFixtureAdapter.DecodedActivity decoded) {
         List<ActivityIdentity> candidates = jdbc.query(
                 "SELECT id, elapsed_seconds, distance_meters FROM activity WHERE sport = ? AND start_time = ?",
                 (result, row) -> new ActivityIdentity(result.getLong("id"), (Double) result.getObject("elapsed_seconds"), (Double) result.getObject("distance_meters")),
@@ -115,8 +116,12 @@ public class ImportService {
                 .filter(candidate -> sameMeasurement(candidate.elapsedSeconds(), decoded.elapsedSeconds(), 2d)
                         && sameMeasurement(candidate.distanceMeters(), decoded.distanceMeters(), 5d))
                 .map(ActivityIdentity::id)
-                .findFirst()
-                .orElse(null);
+                .toList();
+    }
+
+    private Long importedActivity(String hash) {
+        return jdbc.query("SELECT activity_id FROM import_file WHERE sha256 = ?", (result, row) -> result.getLong(1), hash)
+                .stream().findFirst().orElse(null);
     }
 
     private static boolean sameMeasurement(Double left, Double right, double tolerance) {
@@ -159,7 +164,8 @@ public class ImportService {
 
     public record ImportOutcome(String status, Long activityId, boolean originalRetained, String code) {
         static ImportOutcome imported(long activityId, boolean retained) { return new ImportOutcome("IMPORTED", activityId, retained, null); }
-        static ImportOutcome duplicate() { return new ImportOutcome("DUPLICATE", null, false, null); }
+        static ImportOutcome duplicate(Long activityId) { return new ImportOutcome("DUPLICATE", activityId, false, null); }
+        static ImportOutcome ambiguousDuplicate() { return new ImportOutcome("DUPLICATE", null, false, "AMBIGUOUS_ACTIVITY_MATCH"); }
         static ImportOutcome skipped() { return new ImportOutcome("SKIPPED_NON_RUN", null, false, "NON_RUNNING"); }
         static ImportOutcome invalid(String code) { return new ImportOutcome("INVALID", null, false, code); }
         static ImportOutcome failed() { return new ImportOutcome("FAILED", null, false, "IMPORT_FAILED"); }

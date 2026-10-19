@@ -156,9 +156,11 @@ class ImportControllerTests {
         mockMvc.perform(multipart("/api/imports").file(new MockMultipartFile("files", "activity.fit", "application/octet-stream", bytes)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.outcomes[0].status").value("IMPORTED"));
+        Long activityId = jdbc.queryForObject("SELECT activity_id FROM import_file WHERE sha256 = ?", Long.class, FIXTURE_HASH);
         mockMvc.perform(multipart("/api/imports").file(new MockMultipartFile("files", "activity.fit", "application/octet-stream", bytes)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.outcomes[0].status").value("DUPLICATE"));
+                .andExpect(jsonPath("$.outcomes[0].status").value("DUPLICATE"))
+                .andExpect(jsonPath("$.outcomes[0].activityId").value(activityId));
     }
 
     @Test
@@ -172,7 +174,10 @@ class ImportControllerTests {
         }, jdbc, new TransactionTemplate(transactionManager), Path.of(System.getProperty("java.io.tmpdir"), "running-dashboard-import-tests").toString(), new ImportProperties(10, 10_485_760, 104_857_600));
 
         assertEquals("IMPORTED", imports.importFiles(List.of(new MockMultipartFile("files", "activity.fit", "application/octet-stream", original))).outcomes().getFirst().status());
-        assertEquals("DUPLICATE", imports.importFiles(List.of(new MockMultipartFile("files", "reexport.fit", "application/octet-stream", reexport))).outcomes().getFirst().status());
+        var duplicate = imports.importFiles(List.of(new MockMultipartFile("files", "reexport.fit", "application/octet-stream", reexport))).outcomes().getFirst();
+        assertEquals("DUPLICATE", duplicate.status());
+        assertEquals(jdbc.queryForObject("SELECT activity_id FROM import_file WHERE sha256 = ?", Long.class,
+                HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(original))), duplicate.activityId());
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity WHERE sport = 'running' AND start_time = ?", Integer.class, Timestamp.from(Instant.parse("2024-01-01T12:00:00Z"))));
     }
 
