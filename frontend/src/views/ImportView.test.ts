@@ -2,9 +2,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ImportView from './ImportView.vue'
 
-const { importFits } = vi.hoisted(() => ({ importFits: vi.fn() }))
+const { importFits, getIntervalsIcuStatus, startIntervalsIcuSync } = vi.hoisted(() => ({
+  importFits: vi.fn(), getIntervalsIcuStatus: vi.fn(), startIntervalsIcuSync: vi.fn(),
+}))
 
-vi.mock('../api', () => ({ importFits }))
+vi.mock('../api', () => ({ importFits, getIntervalsIcuStatus, startIntervalsIcuSync }))
 
 const file = (name: string) => new File(['fit'], name, { type: 'application/octet-stream' })
 async function selectFiles(wrapper: ReturnType<typeof mount>, files: File[]) {
@@ -13,9 +15,77 @@ async function selectFiles(wrapper: ReturnType<typeof mount>, files: File[]) {
   await picker.trigger('change')
 }
 async function settle() { await flushPromises() }
+const status = (overrides = {}) => ({
+  configured: true,
+  running: false,
+  lastSuccessfulSyncAt: null,
+  lastAttemptAt: null,
+  retryAfterUntil: null,
+  lastResult: null,
+  message: null,
+  ...overrides,
+})
 
 describe('ImportView', () => {
-  beforeEach(() => importFits.mockReset())
+  beforeEach(() => {
+    importFits.mockReset()
+    getIntervalsIcuStatus.mockReset().mockResolvedValue(status())
+    startIntervalsIcuSync.mockReset().mockResolvedValue(status())
+  })
+
+  it('shows the unconfigured Intervals state and setup hint', async () => {
+    getIntervalsIcuStatus.mockResolvedValue(status({ configured: false }))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="intervals-status"]').text()).toContain('Nicht konfiguriert')
+    expect(wrapper.text()).toContain('INTERVALS_ICU_API_KEY')
+    expect(wrapper.get('[data-testid="intervals-sync"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('shows connected state and the last successful sync time', async () => {
+    getIntervalsIcuStatus.mockResolvedValue(status({ lastSuccessfulSyncAt: '2026-10-19T14:43:00Z' }))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="intervals-status"]').text()).toContain('Verbunden')
+    expect(wrapper.text()).toContain('19.10.2026')
+  })
+
+  it('shows sync totals and makes a manual sync request', async () => {
+    const completed = status({ lastResult: { started: true, checked: 3, imported: 1, alreadyPresent: 2, skipped: 0, failed: 0, error: null, activities: [] } })
+    startIntervalsIcuSync.mockResolvedValue(completed)
+    const wrapper = mount(ImportView)
+    await settle()
+
+    await wrapper.get('[data-testid="intervals-sync"]').trigger('click')
+    await settle()
+
+    expect(startIntervalsIcuSync).toHaveBeenCalledOnce()
+    expect(wrapper.get('[data-testid="intervals-result"]').text()).toContain('3 Aktivitäten geprüft')
+    expect(wrapper.get('[data-testid="intervals-result"]').text()).toContain('1 neuer Lauf importiert')
+    expect(wrapper.get('[data-testid="intervals-result"]').text()).toContain('2 bereits vorhanden')
+  })
+
+  it('disables the button while a sync is running', async () => {
+    getIntervalsIcuStatus.mockResolvedValue(status({ running: true }))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.text()).toContain('Synchronisierung läuft')
+    expect(wrapper.get('[data-testid="intervals-sync"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('shows the last sync error', async () => {
+    getIntervalsIcuStatus.mockResolvedValue(status({ lastResult: {
+      started: true, checked: 1, imported: 0, alreadyPresent: 0, skipped: 0, failed: 1,
+      error: 'Intervals.icu denied access (403).', activities: [],
+    } }))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="intervals-error"]').text()).toContain('Intervals.icu denied access (403).')
+  })
 
   it('lets the user select multiple FIT files and start one batch', async () => {
     importFits.mockResolvedValue({ outcomes: [

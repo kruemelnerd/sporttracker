@@ -72,6 +72,37 @@ export type ImportResponse = {
   batchError: ImportBatchError | null
 }
 
+export type IntervalsIcuActivityResult = {
+  externalId: string | null
+  status: 'IMPORTED' | 'ALREADY_PRESENT' | 'SKIPPED' | 'FAILED'
+  code: string | null
+  message: string
+}
+
+export type IntervalsIcuSyncResult = {
+  started: boolean
+  configured: boolean
+  checked: number
+  imported: number
+  alreadyPresent: number
+  skipped: number
+  failed: number
+  activities: IntervalsIcuActivityResult[]
+  error: string | null
+  attemptedAt: string | null
+  completedAt: string | null
+}
+
+export type IntervalsIcuStatus = {
+  configured: boolean
+  running: boolean
+  lastSuccessfulSyncAt: string | null
+  lastAttemptAt: string | null
+  retryAfterUntil: string | null
+  lastResult: IntervalsIcuSyncResult | null
+  message: string | null
+}
+
 export async function getHealth(): Promise<HealthResponse> {
   const response = await fetch('/api/health')
   if (!response.ok) throw new Error(`Health request failed: ${response.status}`)
@@ -103,4 +134,16 @@ export async function importFits(files: File[]): Promise<ImportResponse> {
   const response = await fetch('/api/imports', { method: 'POST', body: form })
   if (!response.ok) throw new Error(`Import request failed: ${response.status}`)
   return response.json() as Promise<ImportResponse>
+}
+
+export async function getIntervalsIcuStatus(): Promise<IntervalsIcuStatus> {
+  const response = await fetch('/api/imports/intervals-icu/status')
+  if (!response.ok) throw new Error(`Intervals.icu status request failed: ${response.status}`)
+  return response.json() as Promise<IntervalsIcuStatus>
+}
+
+export async function startIntervalsIcuSync(): Promise<IntervalsIcuStatus> {
+  const response = await fetch('/api/imports/intervals-icu/sync', { method: 'POST' })
+  if (!response.ok && response.status !== 409) throw new Error(`Intervals.icu sync request failed: ${response.status}`)
+  return response.json() as Promise<IntervalsIcuStatus>
 }
