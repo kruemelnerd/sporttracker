@@ -36,6 +36,14 @@ Optional `.env.example` nach `.env` kopieren und Werte anpassen. Die voreingeste
 
 Backend: `http://localhost:8080`. Frontend: `http://localhost:5173`. Das Frontend leitet `/api` über Vite an das Backend weiter.
 
+Beide Anwendungen samt PostgreSQL lassen sich auch gemeinsam starten:
+
+```bash
+./dev.sh
+```
+
+Mit `Ctrl-C` werden Backend und Frontend beendet; PostgreSQL bleibt gestartet und die Daten bleiben erhalten.
+
 ## Intervals.icu
 
 1. Intervals.icu öffnen und **Settings → Developer Settings** aufrufen.
