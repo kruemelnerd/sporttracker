@@ -7,6 +7,35 @@ plugins {
 group = "local.runningdashboard"
 version = "0.1.0-SNAPSHOT"
 
+val frontendDir = layout.projectDirectory.dir("../frontend")
+val frontendOutput = layout.buildDirectory.dir("generated/frontend")
+
+val npmCi by tasks.registering(Exec::class) {
+    workingDir(frontendDir)
+    commandLine("npm", "ci")
+    inputs.files(frontendDir.file("package.json"), frontendDir.file("package-lock.json"))
+    outputs.dir(frontendDir.dir("node_modules"))
+}
+
+val typecheckFrontend by tasks.registering(Exec::class) {
+    dependsOn(npmCi)
+    workingDir(frontendDir)
+    commandLine("npm", "run", "typecheck")
+    inputs.files(fileTree(frontendDir) {
+        exclude("node_modules/**", "dist/**")
+    })
+}
+
+val buildFrontend by tasks.registering(Exec::class) {
+    dependsOn(typecheckFrontend)
+    workingDir(frontendDir)
+    commandLine("npm", "exec", "vite", "build", "--", "--outDir", frontendOutput.get().asFile.absolutePath, "--emptyOutDir")
+    inputs.files(fileTree(frontendDir) {
+        exclude("node_modules/**", "dist/**")
+    })
+    outputs.dir(frontendOutput)
+}
+
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
@@ -47,7 +76,15 @@ tasks.withType<Test> {
 }
 
 tasks.named<ProcessResources>("processResources") {
+    mustRunAfter(buildFrontend)
+    from(frontendOutput) {
+        into("static")
+    }
     from("src/test/resources/fit/synthetic-running.fit") {
         into("fit")
     }
+}
+
+tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
+    dependsOn(buildFrontend)
 }
