@@ -1,5 +1,3 @@
-<!-- GSD:project-start source:PROJECT.md -->
-
 ## Project
 
 **Running Dashboard**
@@ -15,10 +13,6 @@ Running Dashboard ist eine lokale Webanwendung zur Verwaltung und Auswertung eig
 - **Data integrity**: FIT-Zeitstempel, GPS-Semicircles, optionale Sensorwerte und Duplikate korrekt behandeln — Trainingsdaten sind wichtiger als UI-Politur
 - **Persistence**: PostgreSQL für normalisierte Daten, Originaldateien optional im konfigurierbaren Dateisystem — keine Binärdateien in PostgreSQL
 - **Compatibility**: Lokale Zeitzone nur für Anzeige, intern UTC/Instant — Sommer-/Winterzeit darf Datumswerte nicht verschieben
-
-<!-- GSD:project-end -->
-
-<!-- GSD:stack-start source:research/STACK.md -->
 
 ## Technology Stack
 
@@ -108,10 +102,6 @@ Running Dashboard ist eine lokale Webanwendung zur Verwaltung und Auswertung eig
 - **Medium confidence in exact versions:** release pages and Context7 were checked on 2026-09-20, but dependency versions should be pinned from their release pages/registries when implementation starts, especially Garmin FIT SDK, Vue-ECharts, Leaflet, and TypeScript.
 - **Low confidence in OSM operational suitability:** the official policy is clear, but the public tile service has no SLA. Keep the provider swappable and revisit a dedicated/self-hosted provider before distributing the app beyond private local use.
 
-<!-- GSD:stack-end -->
-
-<!-- GSD:conventions-start source:CONVENTIONS.md -->
-
 ## Conventions
 
 Conventions not yet established. Will populate as patterns emerge during development.
@@ -120,41 +110,12 @@ Conventions not yet established. Will populate as patterns emerge during develop
 
 - Nach jeder größeren Integration prüfen, ob die Anwendung weiterhin baut und die Tests erfolgreich laufen.
 - Falls der vollständige Build oder die Tests zu lange dauern, zunächst nur die relevanten Smoke-Tests ausführen.
-<!-- GSD:conventions-end -->
-
-<!-- GSD:architecture-start source:ARCHITECTURE.md -->
-
 ## Architecture
 
 Architecture not yet mapped. Follow existing patterns found in the codebase.
-<!-- GSD:architecture-end -->
-
-<!-- GSD:skills-start source:skills/ -->
-
 ## Project Skills
 
 No project skills found. Add skills to any of: `.claude/skills/`, `.agents/skills/`, `.cursor/skills/`, `.github/skills/`, or `.codex/skills/` with a `SKILL.md` index file.
-<!-- GSD:skills-end -->
-
-<!-- GSD:workflow-start source:GSD defaults -->
-
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-
-- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd-debug` for investigation and bug fixing
-- `/gsd-execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-<!-- GSD:workflow-end -->
-
-<!-- GSD:profile-start -->
-
 ## Developer Profile
 
-> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
+> Profile not yet configured.
