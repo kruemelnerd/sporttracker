@@ -1,0 +1,22 @@
+spring:
+  config:
+    import: optional:configtree:/run/secrets/
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    hikari:
+      connection-timeout: 2000
+  flyway:
+    clean-disabled: true
+    validate-on-migrate: true
+    baseline-on-migrate: false
+
+server:
+  address: 0.0.0.0
+  port: 8080
+
+running-dashboard:
+  data-directory: /data
+  intervals-icu:
+    api-key: ${INTERVALS_ICU_API_KEY:}
