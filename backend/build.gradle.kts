@@ -29,14 +29,35 @@ val typecheckFrontend by tasks.registering(Exec::class) {
     })
 }
 
-val buildFrontend by tasks.registering(Exec::class) {
-    dependsOn(typecheckFrontend)
+val frontendBuildOutput = providers.gradleProperty("frontendBuildOutput")
+
+val viteBuildFrontend by tasks.registering(Exec::class) {
     workingDir(frontendDir)
     commandLine("npm", "exec", "vite", "build", "--", "--outDir", frontendOutput.get().asFile.absolutePath, "--emptyOutDir")
     inputs.files(fileTree(frontendDir) {
         exclude("node_modules/**", "dist/**")
     })
     outputs.dir(frontendOutput)
+}
+
+val buildFrontend by tasks.registering {
+    if (frontendBuildOutput.isPresent) {
+        inputs.dir(frontendBuildOutput)
+        outputs.dir(frontendOutput)
+        doLast {
+            val source = file(frontendBuildOutput.get())
+            require(source.isDirectory && source.resolve("index.html").isFile) {
+                "Frontend build output must be an existing directory containing index.html: $source"
+            }
+            project.delete(frontendOutput)
+            copy {
+                from(source)
+                into(frontendOutput)
+            }
+        }
+    } else {
+        dependsOn(typecheckFrontend, viteBuildFrontend)
+    }
 }
 
 java {
