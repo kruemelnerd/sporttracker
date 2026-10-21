@@ -4,6 +4,9 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
 }
 
+extra["tomcat.version"] = "11.0.27"
+extra["jackson-bom.version"] = "3.1.8"
+
 group = "local.runningdashboard"
 version = "0.1.0-SNAPSHOT"
 
