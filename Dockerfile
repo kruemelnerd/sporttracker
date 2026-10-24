@@ -13,7 +13,8 @@ COPY --from=frontend /frontend/dist /frontend-build
 WORKDIR /workspace/backend
 RUN --mount=type=cache,target=/root/.gradle/caches \
     --mount=type=cache,target=/root/.gradle/wrapper \
-    ./gradlew --no-daemon --max-workers=2 -PfrontendBuildOutput=/frontend-build bootJar
+    ./gradlew --no-daemon --max-workers=2 -PfrontendBuildOutput=/frontend-build bootJar && \
+    mkdir -p /healthcheck && javac -d /healthcheck /workspace/docker/healthcheck/Healthcheck.java
 
 FROM eclipse-temurin:25-jre-noble@sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5 AS runtime
 WORKDIR /app
@@ -21,6 +22,7 @@ RUN groupadd --system --gid 10001 app && \
     useradd --system --uid 10001 --gid 10001 --no-create-home app && \
     mkdir /data && chown 10001:10001 /data
 COPY --from=backend --chown=10001:10001 /workspace/backend/build/libs/running-dashboard-backend-0.1.0-SNAPSHOT.jar /app/app.jar
+COPY --from=backend --chown=10001:10001 /healthcheck/Healthcheck.class /healthcheck/Healthcheck.class
 ENV SPRING_PROFILES_ACTIVE=container \
     DATA_DIRECTORY=/data
 USER 10001:10001

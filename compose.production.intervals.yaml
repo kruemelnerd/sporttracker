@@ -1,0 +1,11 @@
+services:
+  app:
+    environment:
+      INTERVALS_ICU_ENABLED: "true"
+    secrets:
+      - source: intervals_icu_api_key
+        target: INTERVALS_ICU_API_KEY
+
+secrets:
+  intervals_icu_api_key:
+    file: ${INTERVALS_ICU_API_KEY_FILE:?Set path to the Intervals.icu API-key file}

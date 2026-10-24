@@ -1,5 +1,14 @@
 .idea/
 .env
+.env.local
+.env.*.local
+.env.production
+.env.production.*
+.secrets/
+secrets/
+*.secret
+*.secret.*
+compose.*.local.yaml
 .opencode/node_modules/
 .opencode/memory/
 **/__pycache__/
