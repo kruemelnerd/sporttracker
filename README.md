@@ -44,6 +44,10 @@ Beide Anwendungen samt PostgreSQL lassen sich auch gemeinsam starten:
 
 Mit `Ctrl-C` werden Backend und Frontend beendet; PostgreSQL bleibt gestartet und die Daten bleiben erhalten.
 
+## Containerbetrieb
+
+Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie Backup und Restore siehe [docs/containerization.md](docs/containerization.md). Der lokale Entwicklungsstart über `./dev.sh` bleibt davon unabhängig.
+
 ## Intervals.icu
 
 1. Intervals.icu öffnen und **Settings → Developer Settings** aufrufen.
