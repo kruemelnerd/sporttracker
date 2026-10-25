@@ -34,7 +34,35 @@ async function routeData(page: Page) {
 }
 
 async function noPageOverflow(page: Page, width: number) {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)
+  const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
+  if (scrollWidth > width) {
+    const diagnostic = await page.evaluate(() => ({
+      fonts: document.fonts.status,
+      readyState: document.readyState,
+      elements: [...document.querySelectorAll<HTMLElement>('body *')]
+        .map((element) => {
+          const style = getComputedStyle(element)
+          const rect = element.getBoundingClientRect()
+          return {
+            selector: `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ''}${typeof element.className === 'string' && element.className ? `.${element.className.trim().replace(/\s+/g, '.')}` : ''}`,
+            rect: { left: rect.left, right: rect.right, width: rect.width },
+            scrollWidth: element.scrollWidth,
+            clientWidth: element.clientWidth,
+            minWidth: style.minWidth,
+            maxWidth: style.maxWidth,
+            whiteSpace: style.whiteSpace,
+            overflow: style.overflow,
+            display: style.display,
+            gridTemplateColumns: style.gridTemplateColumns,
+            flex: style.flex,
+          }
+        })
+        .filter((element) => element.rect.right > window.innerWidth || element.scrollWidth > element.clientWidth)
+        .sort((a, b) => b.rect.right - a.rect.right),
+    }))
+    console.error(`Mobile overflow at ${width}px (scrollWidth ${scrollWidth})`, JSON.stringify(diagnostic))
+  }
+  expect(scrollWidth).toBeLessThanOrEqual(width)
 }
 
 test('all M5 views fit target widths and capture visual checkpoints', async ({ page }) => {
