@@ -74,27 +74,11 @@ Der Datenbestand liegt im benannten Volume `running-dashboard-postgres` und blei
 ## Tests
 
 ```bash
-docker compose -p sporttracker-m4-e2e -f compose.e2e.yaml up -d --wait db
-cd backend && ./gradlew test
-cd frontend && npm run test:unit && npm run build
+./scripts/test-all.sh
 ```
 
-Backend integration tests always use the isolated `running_dashboard_e2e` database and reset its application tables only after checking the database and user. They never use the development database.
+Das Skript führt Backend-, Frontend- und Playwright-Tests sequenziell gegen eine pro Lauf neu angelegte PostgreSQL-Datenbank, ein eigenes Compose-Projekt und dynamische Loopback-Ports aus. Eigene temporäre Ressourcen werden anschließend geprüft und entfernt. Mit `./scripts/test-all.sh --keep-on-failure` bleiben Ressourcen eines fehlgeschlagenen Laufs zur Fehlersuche erhalten.
 
-## Phase-1-Smoke
-
-Einmalig den Playwright-Browser installieren:
-
-```bash
-cd frontend && npx playwright install --with-deps chromium
-```
-
-Der vollständige E2E-Test startet eine eigene PostgreSQL-Datenbank (`sporttracker-m4-e2e`, Port `55432`, eigenes Volume), dazu Backend (`18080`) und Vite (`15173`) aus diesem Checkout. Playwright verwendet ausschließlich diese Server; ein vorhandener Server wird nicht wiederverwendet. Das globale Setup leert die Anwendungstabellen nur nach einer Datenbank-/Benutzerprüfung auf `running_dashboard_e2e`:
-
-```bash
-cd frontend && ./scripts/phase1-smoke.sh
-```
-
-Die normale Entwicklungsdatenbank und deren Volume bleiben unberührt. E2E-Daten liegen ausschließlich im Volume `sporttracker-m4-e2e_sporttracker-m4-e2e-postgres`; zum Stoppen nur des E2E-Containers: `docker compose -p sporttracker-m4-e2e -f compose.e2e.yaml down`. Das Volume bleibt damit für weitere Läufe erhalten.
+Der Playwright-Smoke kann separat innerhalb einer explizit bereitgestellten isolierten `TEST_*`-Umgebung über `frontend/scripts/phase1-smoke.sh` ausgeführt werden. Er startet keine Datenbank selbst.
 
 Die Summary zeigt den dekodierten Lauf als `running` mit Status `decoded`, UTC-Startzeit, Distanz sowie positiven Record-/Lap-Zählungen. Upload, Persistenz, Dashboard, Karten, Charts und Analytics sind in dieser Phase nicht enthalten.
