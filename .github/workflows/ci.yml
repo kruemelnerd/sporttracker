@@ -116,3 +116,124 @@ jobs:
         run: trivy fs --config trivy.yaml --scanners vuln,misconfig --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 0 --format table .
       - name: Fail on high or critical dependency and configuration findings
         run: trivy fs --config trivy.yaml --scanners vuln,misconfig --severity HIGH,CRITICAL --exit-code 1 --format table .
+
+  publish-image:
+    name: Publish security-scanned image
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.test.result == 'success' && needs.security-workflows.result == 'success' && needs.security-code.result == 'success' }}
+    needs: [test, security-workflows, security-code]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: sporttracker-ghcr-stable
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Build image locally for scanning
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ghcr.io/kruemelnerd/sporttracker:sha-${{ github.sha }},ghcr.io/kruemelnerd/sporttracker:stable
+          labels: |
+            org.opencontainers.image.source=https://github.com/kruemelnerd/sporttracker
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ github.sha }}
+          cache-from: type=gha,scope=sporttracker-image
+          cache-to: type=gha,mode=max,scope=sporttracker-image
+
+      - name: Verify image configuration
+        env:
+          IMAGE: ghcr.io/kruemelnerd/sporttracker:sha-${{ github.sha }}
+        run: |
+          test "$(docker image inspect "$IMAGE" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
+          test "$(docker image inspect "$IMAGE" --format '{{.Config.User}}')" = 10001:10001
+          docker image inspect "$IMAGE" --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -Fx 'SPRING_PROFILES_ACTIVE=container'
+          test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = https://github.com/kruemelnerd/sporttracker
+          test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+          test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "$GITHUB_SHA"
+
+      - name: Install Trivy 0.69.3 (verified checksums)
+        env:
+          TRIVY_CHECKSUMS_SHA256: 1f77df3ded7dff01388564c658d38c8e6d5d3353abeb16687b1fc2d61672e263
+        run: |
+          curl --fail --location --silent --show-error https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_checksums.txt -o /tmp/trivy_checksums.txt
+          echo "$TRIVY_CHECKSUMS_SHA256  /tmp/trivy_checksums.txt" | sha256sum --check
+          curl --fail --location --silent --show-error https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.tar.gz -o /tmp/trivy_0.69.3_Linux-64bit.tar.gz
+          grep 'trivy_0.69.3_Linux-64bit.tar.gz$' /tmp/trivy_checksums.txt | (cd /tmp && sha256sum --check)
+          tar -xzf /tmp/trivy_0.69.3_Linux-64bit.tar.gz -C /tmp trivy
+          sudo install /tmp/trivy /usr/local/bin/trivy
+          trivy --version
+
+      - name: Report all image findings
+        env:
+          IMAGE: ghcr.io/kruemelnerd/sporttracker:sha-${{ github.sha }}
+        run: trivy image --scanners vuln,misconfig,secret --image-config-scanners misconfig,secret --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 0 --format table "$IMAGE"
+
+      - name: Fail on high or critical image findings
+        env:
+          IMAGE: ghcr.io/kruemelnerd/sporttracker:sha-${{ github.sha }}
+        run: trivy image --scanners vuln,misconfig,secret --image-config-scanners misconfig,secret --severity HIGH,CRITICAL --exit-code 1 --format table "$IMAGE"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Refuse stale main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          current_main=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$current_main" != "$GITHUB_SHA" ]; then
+            echo "Refusing to publish stale commit $GITHUB_SHA; main is at $current_main" >&2
+            exit 1
+          fi
+
+      - name: Push the scanned image tags
+        env:
+          IMAGE: ghcr.io/kruemelnerd/sporttracker
+        run: |
+          docker push "$IMAGE:sha-$GITHUB_SHA"
+          docker push "$IMAGE:stable"
+
+      - name: Verify published tags and pull by registry digest
+        env:
+          IMAGE: ghcr.io/kruemelnerd/sporttracker
+        run: |
+          set -euo pipefail
+          commit_digest=$(docker buildx imagetools inspect --raw "$IMAGE:sha-$GITHUB_SHA" | sha256sum | cut -d ' ' -f 1)
+          stable_digest=$(docker buildx imagetools inspect --raw "$IMAGE:stable" | sha256sum | cut -d ' ' -f 1)
+          test "$commit_digest" = "$stable_digest"
+          digest_ref="$IMAGE@sha256:$commit_digest"
+          docker pull "$digest_ref"
+          docker image inspect "$digest_ref" --format '{{.Os}}/{{.Architecture}} {{.Config.User}}'
+          test "$(docker image inspect "$digest_ref" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
+          test "$(docker image inspect "$digest_ref" --format '{{.Config.User}}')" = 10001:10001
+          test "$(docker image inspect "$digest_ref" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = https://github.com/kruemelnerd/sporttracker
+          test "$(docker image inspect "$digest_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+          test "$(docker image inspect "$digest_ref" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "$GITHUB_SHA"
+          {
+            echo '### Published Sporttracker image'
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Commit tag: \`$IMAGE:sha-$GITHUB_SHA\`"
+            echo "- Stable tag: \`$IMAGE:stable\`"
+            echo "- Registry digest: \`sha256:$commit_digest\`"
+            echo "- Deployment reference: \`$digest_ref\`"
+            echo '- Architecture: `linux/amd64`'
+            docker image inspect "$digest_ref" --format "- Image size: {{.Size}} bytes"
+          } >> "$GITHUB_STEP_SUMMARY"

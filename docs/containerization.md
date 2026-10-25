@@ -8,6 +8,12 @@ Die externen Volumes `sporttracker-prod-postgres` und `sporttracker-prod-fit` sp
 
 ## Installation und Betrieb
 
+### Image-Veröffentlichung
+
+Ein erfolgreicher Push auf `main` veröffentlicht das Image nach den bestehenden CI- und Security-Jobs. Der Workflow baut einmal für `linux/amd64`, prüft Image-Konfiguration und scannt Betriebssystem-/Java-Abhängigkeiten, Container-Konfiguration sowie Secrets mit Trivy. High- oder Critical-Befunde verhindern den Push; Medium-/Low-Befunde bleiben im Actions-Log dokumentiert. Erst danach werden `sha-<vollständiger Commit>` und `stable` aus genau diesem geprüften lokalen Image nach GHCR gepusht. Veröffentlichungen sind serialisiert; Läufe, deren Commit nicht mehr `main`-HEAD ist, werden verworfen.
+
+Der Actions-Run zeigt nach erfolgreichem Push den Registry-Digest, die Pull-Prüfung und die vollständige Referenz `ghcr.io/kruemelnerd/sporttracker@sha256:<digest>`. Für den späteren Compose-Betrieb `SPORTTRACKER_IMAGE=ghcr.io/kruemelnerd/sporttracker` und `SPORTTRACKER_IMAGE_DIGEST=sha256:<digest>` setzen; nicht `stable` als Produktionsreferenz verwenden. Das Package bleibt privat, bis seine Sichtbarkeit separat geprüft und freigegeben wird. Dieser Workflow deployt nicht auf Proxmox.
+
 Voraussetzungen: Linux-VM mit Bash und GNU coreutils (`realpath`, `stat`, `sha256sum`), Docker Engine mit Compose v2 (`docker compose`), ausreichend Speicher und ein gesicherter Hostzugang. PostgreSQL-Dump und Restore benötigen PostgreSQL-18-Clientwerkzeuge; die Skripte verwenden dafür den PostgreSQL-18-Container. Das FIT-Archiv benötigt GNU `tar`; Restore benötigt Python 3 zum sicheren Prüfen der Archivpfade.
 
 1. Vorhandene Volumes erst prüfen, dann nur fehlende Produktionsvolumes anlegen. Niemals ein vorhandenes Volume löschen oder ersetzen:
