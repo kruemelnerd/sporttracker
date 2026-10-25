@@ -19,7 +19,7 @@ for name in TEST_DATABASE_URL TEST_DATABASE_NAME TEST_DATABASE_USERNAME TEST_DAT
   fi
 done
 
-for command in docker git java node npm openssl; do
+for command in docker git java jq node npm openssl; do
   command -v "$command" >/dev/null || { echo "Required command not found: $command" >&2; exit 2; }
 done
 docker compose version >/dev/null
@@ -136,6 +136,7 @@ verify_reset_guard() {
 }
 
 run_tests() {
+  run_step 'Release verification and safe deployment policy tests' bash -c '"$1/tests/security/verify-release-test.sh" && "$1/tests/security/verify-release-policy-test.sh" && "$1/tests/security/deploy-verified-test.sh"' _ "$ROOT_DIR" || return $?
   run_step 'Reject mismatched database identity before reset' verify_reset_guard || return $?
   run_step 'Backend Gradle test suite' bash -c 'cd "$1/backend" && ./gradlew test' _ "$ROOT_DIR" || return $?
   run_step 'Frontend dependency install' npm --prefix "$ROOT_DIR/frontend" ci || return $?
