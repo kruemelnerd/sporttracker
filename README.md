@@ -82,3 +82,9 @@ Das Skript führt Backend-, Frontend- und Playwright-Tests sequenziell gegen ein
 Der Playwright-Smoke kann separat innerhalb einer explizit bereitgestellten isolierten `TEST_*`-Umgebung über `frontend/scripts/phase1-smoke.sh` ausgeführt werden. Er startet keine Datenbank selbst.
 
 Die Summary zeigt den dekodierten Lauf als `running` mit Status `decoded`, UTC-Startzeit, Distanz sowie positiven Record-/Lap-Zählungen. Upload, Persistenz, Dashboard, Karten, Charts und Analytics sind in dieser Phase nicht enthalten.
+
+## Lizenz
+
+Sporttracker steht unter der MIT-Lizenz; siehe [LICENSE](LICENSE).
+
+UI UX Pro Max ist ein eingebundener Drittanbieter-Skill unter MIT-Lizenz, Copyright (c) 2024 Next Level Builder. Die [Originalquelle](https://github.com/nextlevelbuilder/ui-ux-pro-max-skill) und die lokale [Lizenzdatei](.opencode/skills/ui-ux-pro-max/LICENSE) sind hier verlinkt.
