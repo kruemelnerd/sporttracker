@@ -313,7 +313,6 @@ jobs:
             fi
             echo "Rejected as expected: $label"
           }
-          provenance=(gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-provenance-bundle.json --signer-workflow github.com/kruemelnerd/sporttracker/.github/workflows/ci.yml --source-ref refs/heads/main --source-digest "$GITHUB_SHA" --predicate-type https://slsa.dev/provenance/v1)
           printf '{}' > /tmp/damaged-attestation.json
           expect_rejected 'missing provenance' gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-sbom-attestation-bundle.json --predicate-type https://slsa.dev/provenance/v1
           expect_rejected 'missing SBOM attestation' gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-provenance-bundle.json --predicate-type https://spdx.dev/Document/v2.3
