@@ -290,12 +290,12 @@ jobs:
           set -euo pipefail
           gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" \
             --signer-workflow github.com/kruemelnerd/sporttracker/.github/workflows/ci.yml \
-            --source-ref refs/heads/main --source-digest "sha1:$GITHUB_SHA" \
+            --source-ref refs/heads/main --source-digest "$GITHUB_SHA" \
             --predicate-type https://slsa.dev/provenance/v1
           gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" \
             --bundle sporttracker-sbom-attestation-bundle.json \
             --signer-workflow github.com/kruemelnerd/sporttracker/.github/workflows/ci.yml \
-            --source-ref refs/heads/main --source-digest "sha1:$GITHUB_SHA" \
+            --source-ref refs/heads/main --source-digest "$GITHUB_SHA" \
             --predicate-type https://spdx.dev/Document
 
       - name: Promote verified digest to stable

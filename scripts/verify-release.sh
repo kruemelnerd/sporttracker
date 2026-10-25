@@ -28,12 +28,12 @@ commit=$(docker image inspect "$image" --format '{{index .Config.Labels "org.ope
 signer='github.com/kruemelnerd/sporttracker/.github/workflows/ci.yml'
 gh attestation verify "oci://$image" --repo kruemelnerd/sporttracker \
   --signer-repo kruemelnerd/sporttracker --signer-workflow "$signer" \
-  --source-ref refs/heads/main --source-digest "sha1:$commit" --deny-self-hosted-runners \
+  --source-ref refs/heads/main --source-digest "$commit" --deny-self-hosted-runners \
   --cert-oidc-issuer https://token.actions.githubusercontent.com \
   --predicate-type https://slsa.dev/provenance/v1
 gh attestation verify "oci://$image" --repo kruemelnerd/sporttracker \
   --signer-repo kruemelnerd/sporttracker --signer-workflow "$signer" \
-  --source-ref refs/heads/main --source-digest "sha1:$commit" --deny-self-hosted-runners \
+  --source-ref refs/heads/main --source-digest "$commit" --deny-self-hosted-runners \
   --cert-oidc-issuer https://token.actions.githubusercontent.com \
   --predicate-type https://spdx.dev/Document
 
