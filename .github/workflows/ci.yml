@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Java 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies for Playwright CLI
+        run: npm ci --prefix frontend
+      - name: Install Chromium and system dependencies
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run complete test suite
+        run: ./scripts/test-all.sh
+
+  security-workflows:
+    name: Workflow security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint 1.7.12 (verified checksum)
+        env:
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          curl --fail --location --silent --show-error https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz -o /tmp/actionlint.tar.gz
+          echo "$ACTIONLINT_SHA256  /tmp/actionlint.tar.gz" | sha256sum --check
+          tar -xzf /tmp/actionlint.tar.gz -C /tmp actionlint
+          sudo install /tmp/actionlint /usr/local/bin/actionlint
+          actionlint -version
+      - name: Validate workflow syntax, expressions and shell
+        run: actionlint
+      - name: Audit workflows with zizmor
+        uses: zizmorcore/zizmor-action@53290badfa369cb0bf7ad16342cb62c2fa47ac7b # v0.8.0
+        with:
+          version: 1.31.1
+          min-severity: medium
+          advanced-security: false
+          annotations: true
+
+  security-code:
+    name: Code and dependency security
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Node.js 24
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+      - name: Check npm dependencies (high and critical fail)
+        working-directory: frontend
+        run: npm audit --audit-level=high
+      - name: Install Gitleaks 8.30.1 (verified checksum)
+        env:
+          GITLEAKS_CHECKSUMS_SHA256: 061476c21adaf5441516f96f185c1a4706a83cd6329b9b38762271b3d4a52fae
+        run: |
+          curl --fail --location --silent --show-error https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_checksums.txt -o /tmp/gitleaks_checksums.txt
+          echo "$GITLEAKS_CHECKSUMS_SHA256  /tmp/gitleaks_checksums.txt" | sha256sum --check
+          curl --fail --location --silent --show-error https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz -o /tmp/gitleaks_8.30.1_linux_x64.tar.gz
+          grep 'gitleaks_8.30.1_linux_x64.tar.gz$' /tmp/gitleaks_checksums.txt | (cd /tmp && sha256sum --check)
+          tar -xzf /tmp/gitleaks_8.30.1_linux_x64.tar.gz -C /tmp gitleaks
+          sudo install /tmp/gitleaks /usr/local/bin/gitleaks
+      - name: Scan repository for secrets
+        run: gitleaks git --redact --exit-code 1 .
+      - name: Install Trivy 0.69.3 (verified checksums)
+        env:
+          TRIVY_CHECKSUMS_SHA256: 1f77df3ded7dff01388564c658d38c8e6d5d3353abeb16687b1fc2d61672e263
+        run: |
+          curl --fail --location --silent --show-error https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_checksums.txt -o /tmp/trivy_checksums.txt
+          echo "$TRIVY_CHECKSUMS_SHA256  /tmp/trivy_checksums.txt" | sha256sum --check
+          curl --fail --location --silent --show-error https://github.com/aquasecurity/trivy/releases/download/v0.69.3/trivy_0.69.3_Linux-64bit.tar.gz -o /tmp/trivy_0.69.3_Linux-64bit.tar.gz
+          grep 'trivy_0.69.3_Linux-64bit.tar.gz$' /tmp/trivy_checksums.txt | (cd /tmp && sha256sum --check)
+          tar -xzf /tmp/trivy_0.69.3_Linux-64bit.tar.gz -C /tmp trivy
+          sudo install /tmp/trivy /usr/local/bin/trivy
+          trivy --version
+      - name: Report all dependency and configuration findings with Trivy
+        run: trivy fs --config trivy.yaml --scanners vuln,misconfig --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL --exit-code 0 --format table .
+      - name: Fail on high or critical dependency and configuration findings
+        run: trivy fs --config trivy.yaml --scanners vuln,misconfig --severity HIGH,CRITICAL --exit-code 1 --format table .
