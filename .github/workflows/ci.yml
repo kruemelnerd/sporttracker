@@ -126,6 +126,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     concurrency:
       group: sporttracker-ghcr-stable
       cancel-in-progress: false
@@ -146,7 +149,7 @@ jobs:
           platforms: linux/amd64
           load: true
           push: false
-          tags: ghcr.io/kruemelnerd/sporttracker:sha-${{ github.sha }},ghcr.io/kruemelnerd/sporttracker:stable
+          tags: ghcr.io/kruemelnerd/sporttracker:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/kruemelnerd/sporttracker
             org.opencontainers.image.revision=${{ github.sha }}
@@ -204,22 +207,21 @@ jobs:
             exit 1
           fi
 
-      - name: Push the scanned image tags
+      - name: Push the scanned commit image
         env:
           IMAGE: ghcr.io/kruemelnerd/sporttracker
         run: |
           docker push "$IMAGE:sha-$GITHUB_SHA"
-          docker push "$IMAGE:stable"
 
-      - name: Verify published tags and pull by registry digest
+      - name: Resolve and verify registry digest
         env:
           IMAGE: ghcr.io/kruemelnerd/sporttracker
         run: |
           set -euo pipefail
           commit_digest=$(docker buildx imagetools inspect --raw "$IMAGE:sha-$GITHUB_SHA" | sha256sum | cut -d ' ' -f 1)
-          stable_digest=$(docker buildx imagetools inspect --raw "$IMAGE:stable" | sha256sum | cut -d ' ' -f 1)
-          test "$commit_digest" = "$stable_digest"
           digest_ref="$IMAGE@sha256:$commit_digest"
+          echo "IMAGE_DIGEST=sha256:$commit_digest" >> "$GITHUB_ENV"
+          echo "DIGEST_REF=$digest_ref" >> "$GITHUB_ENV"
           docker pull "$digest_ref"
           docker image inspect "$digest_ref" --format '{{.Os}}/{{.Architecture}} {{.Config.User}}'
           test "$(docker image inspect "$digest_ref" --format '{{.Os}}/{{.Architecture}}')" = linux/amd64
@@ -227,13 +229,113 @@ jobs:
           test "$(docker image inspect "$digest_ref" --format '{{index .Config.Labels "org.opencontainers.image.source"}}')" = https://github.com/kruemelnerd/sporttracker
           test "$(docker image inspect "$digest_ref" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
           test "$(docker image inspect "$digest_ref" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" = "$GITHUB_SHA"
+
+      - name: Install Syft 1.55.0 (verified checksums)
+        env:
+          SYFT_CHECKSUMS_SHA256: aba5ac8ee870bb93fd3b2058471ffe7e57492ba673b5e0bcbfca92006c2f4dc7
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error https://github.com/anchore/syft/releases/download/v1.55.0/syft_1.55.0_checksums.txt -o /tmp/syft_checksums.txt
+          echo "$SYFT_CHECKSUMS_SHA256  /tmp/syft_checksums.txt" | sha256sum --check
+          curl --fail --location --silent --show-error https://github.com/anchore/syft/releases/download/v1.55.0/syft_1.55.0_linux_amd64.tar.gz -o /tmp/syft.tar.gz
+          grep 'syft_1.55.0_linux_amd64.tar.gz$' /tmp/syft_checksums.txt | (cd /tmp && sha256sum --check)
+          tar -xzf /tmp/syft.tar.gz -C /tmp syft
+          sudo install /tmp/syft /usr/local/bin/syft
+          syft version
+
+      - name: Generate SPDX SBOM for the published runtime image
+        run: |
+          set -euo pipefail
+          syft "$DIGEST_REF" --output spdx-json=sporttracker-sbom.spdx.json
+          jq -e '.spdxVersion | startswith("SPDX-")' sporttracker-sbom.spdx.json >/dev/null
+          jq -e '.packages | length > 0' sporttracker-sbom.spdx.json >/dev/null
+          jq -e '[.packages[].name] | any(test("temurin|openjdk|java"; "i"))' sporttracker-sbom.spdx.json >/dev/null
+          for component in spring tomcat jackson postgresql; do
+            jq -e --arg component "$component" '[.packages[].name] | any(test($component; "i"))' sporttracker-sbom.spdx.json >/dev/null
+          done
+          jq '{format:.spdxVersion, components:(.packages|length)}' sporttracker-sbom.spdx.json
+
+      - name: Attest the published image with SLSA provenance
+        id: provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/kruemelnerd/sporttracker
+          subject-digest: ${{ env.IMAGE_DIGEST }}
+          push-to-registry: true
+
+      - name: Attest SPDX SBOM for the same image digest
+        id: sbom-attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/kruemelnerd/sporttracker
+          subject-digest: ${{ env.IMAGE_DIGEST }}
+          sbom-path: sporttracker-sbom.spdx.json
+          push-to-registry: true
+
+      - name: Preserve complete signed attestation bundles
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.sbom-attestation.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "$PROVENANCE_BUNDLE" sporttracker-provenance-bundle.json
+          cp "$SBOM_BUNDLE" sporttracker-sbom-attestation-bundle.json
+          jq -e . sporttracker-provenance-bundle.json >/dev/null
+          jq -e . sporttracker-sbom-attestation-bundle.json >/dev/null
+
+      - name: Verify provenance and SBOM attestations before stable promotion
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow github.com/kruemelnerd/sporttracker/.github/workflows/ci.yml \
+            --source-ref refs/heads/main --source-digest "sha1:$GITHUB_SHA" \
+            --predicate-type https://slsa.dev/provenance/v1
+          gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" \
+            --bundle sporttracker-sbom-attestation-bundle.json \
+            --signer-workflow github.com/kruemelnerd/sporttracker/.github/workflows/ci.yml \
+            --source-ref refs/heads/main --source-digest "sha1:$GITHUB_SHA" \
+            --predicate-type https://spdx.dev/Document
+
+      - name: Promote verified digest to stable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/kruemelnerd/sporttracker
+        run: |
+          set -euo pipefail
+          current_main=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          test "$current_main" = "$GITHUB_SHA"
+          docker buildx imagetools create --tag "$IMAGE:stable" "$DIGEST_REF"
+          stable_digest=$(docker buildx imagetools inspect --raw "$IMAGE:stable" | sha256sum | cut -d ' ' -f 1)
+          test "sha256:$stable_digest" = "$IMAGE_DIGEST"
           {
-            echo '### Published Sporttracker image'
+            echo '### Published verified Sporttracker image'
             echo "- Commit: \`$GITHUB_SHA\`"
             echo "- Commit tag: \`$IMAGE:sha-$GITHUB_SHA\`"
             echo "- Stable tag: \`$IMAGE:stable\`"
-            echo "- Registry digest: \`sha256:$commit_digest\`"
-            echo "- Deployment reference: \`$digest_ref\`"
-            echo '- Architecture: linux/amd64'
-            docker image inspect "$digest_ref" --format "- Image size: {{.Size}} bytes"
+            echo "- Registry digest: \`$IMAGE_DIGEST\`"
+            echo "- Deployment reference: \`$DIGEST_REF\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write release metadata
+        env:
+          IMAGE: ghcr.io/kruemelnerd/sporttracker
+        run: |
+          jq -n --arg commit "$GITHUB_SHA" --arg image "$IMAGE" \
+            --arg digest "$IMAGE_DIGEST" --arg run_id "$GITHUB_RUN_ID" \
+            --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '{git_commit:$commit,image_repository:$image,registry_digest:$digest,workflow_run_id:$run_id,created_at:$created_at,sbom_format:"SPDX JSON",predicate_types:{provenance:"https://slsa.dev/provenance/v1",sbom:"https://spdx.dev/Document"}}' \
+            > release-metadata.json
+
+      - name: Upload release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sporttracker-release-evidence-${{ github.sha }}
+          path: |
+            sporttracker-sbom.spdx.json
+            sporttracker-provenance-bundle.json
+            sporttracker-sbom-attestation-bundle.json
+            release-metadata.json
+          if-no-files-found: error
+          retention-days: 90
