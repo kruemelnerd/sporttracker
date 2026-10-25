@@ -298,6 +298,33 @@ jobs:
             --source-ref refs/heads/main --source-digest "$GITHUB_SHA" \
             --predicate-type https://spdx.dev/Document/v2.3
 
+      - name: Confirm release verifier rejects invalid evidence and trust claims
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/kruemelnerd/sporttracker
+        run: |
+          set -euo pipefail
+          expect_rejected() {
+            label=$1
+            shift
+            if "$@" >/dev/null 2>&1; then
+              echo "Verifier unexpectedly accepted $label" >&2
+              exit 1
+            fi
+            echo "Rejected as expected: $label"
+          }
+          provenance=(gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-provenance-bundle.json --signer-workflow github.com/kruemelnerd/sporttracker/.github/workflows/ci.yml --source-ref refs/heads/main --source-digest "$GITHUB_SHA" --predicate-type https://slsa.dev/provenance/v1)
+          printf '{}' > /tmp/damaged-attestation.json
+          expect_rejected 'missing provenance' gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-sbom-attestation-bundle.json --predicate-type https://slsa.dev/provenance/v1
+          expect_rejected 'missing SBOM attestation' gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-provenance-bundle.json --predicate-type https://spdx.dev/Document/v2.3
+          expect_rejected 'wrong image digest' gh attestation verify "oci://$IMAGE@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-provenance-bundle.json --predicate-type https://slsa.dev/provenance/v1
+          expect_rejected 'wrong repository' gh attestation verify "oci://$DIGEST_REF" --repo example/untrusted --bundle sporttracker-provenance-bundle.json --predicate-type https://slsa.dev/provenance/v1
+          expect_rejected 'wrong signer workflow' gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-provenance-bundle.json --signer-workflow github.com/example/untrusted/.github/workflows/ci.yml --predicate-type https://slsa.dev/provenance/v1
+          expect_rejected 'unapproved source ref' gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-provenance-bundle.json --source-ref refs/heads/feature --predicate-type https://slsa.dev/provenance/v1
+          expect_rejected 'invalid predicate type' gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-sbom-attestation-bundle.json --predicate-type https://example.invalid/predicate
+          expect_rejected 'damaged attestation bundle' gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle /tmp/damaged-attestation.json --predicate-type https://slsa.dev/provenance/v1
+          expect_rejected 'unreachable verification source' env GH_HOST=attestations.invalid gh attestation verify "oci://$DIGEST_REF" --repo "$GITHUB_REPOSITORY" --bundle sporttracker-provenance-bundle.json --predicate-type https://slsa.dev/provenance/v1
+
       - name: Promote verified digest to stable
         env:
           GH_TOKEN: ${{ github.token }}
