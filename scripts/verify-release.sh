@@ -35,6 +35,6 @@ gh attestation verify "oci://$image" --repo kruemelnerd/sporttracker \
   --signer-repo kruemelnerd/sporttracker --signer-workflow "$signer" \
   --source-ref refs/heads/main --source-digest "$commit" --deny-self-hosted-runners \
   --cert-oidc-issuer https://token.actions.githubusercontent.com \
-  --predicate-type https://spdx.dev/Document
+  --predicate-type https://spdx.dev/Document/v2.3
 
 echo "Verified $image from kruemelnerd/sporttracker@$commit (main; $digest)"

@@ -296,7 +296,7 @@ jobs:
             --bundle sporttracker-sbom-attestation-bundle.json \
             --signer-workflow github.com/kruemelnerd/sporttracker/.github/workflows/ci.yml \
             --source-ref refs/heads/main --source-digest "$GITHUB_SHA" \
-            --predicate-type https://spdx.dev/Document
+            --predicate-type https://spdx.dev/Document/v2.3
 
       - name: Promote verified digest to stable
         env:
@@ -325,7 +325,7 @@ jobs:
           jq -n --arg commit "$GITHUB_SHA" --arg image "$IMAGE" \
             --arg digest "$IMAGE_DIGEST" --arg run_id "$GITHUB_RUN_ID" \
             --arg created_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            '{git_commit:$commit,image_repository:$image,registry_digest:$digest,workflow_run_id:$run_id,created_at:$created_at,sbom_format:"SPDX JSON",predicate_types:{provenance:"https://slsa.dev/provenance/v1",sbom:"https://spdx.dev/Document"}}' \
+            '{git_commit:$commit,image_repository:$image,registry_digest:$digest,workflow_run_id:$run_id,created_at:$created_at,sbom_format:"SPDX JSON",predicate_types:{provenance:"https://slsa.dev/provenance/v1",sbom:"https://spdx.dev/Document/v2.3"}}' \
             > release-metadata.json
 
       - name: Upload release evidence
