@@ -234,6 +234,6 @@ jobs:
             echo "- Stable tag: \`$IMAGE:stable\`"
             echo "- Registry digest: \`sha256:$commit_digest\`"
             echo "- Deployment reference: \`$digest_ref\`"
-            echo '- Architecture: `linux/amd64`'
+            echo '- Architecture: linux/amd64'
             docker image inspect "$digest_ref" --format "- Image size: {{.Size}} bytes"
           } >> "$GITHUB_STEP_SUMMARY"
