@@ -6,6 +6,8 @@
 
 Die externen Volumes `sporttracker-prod-postgres` und `sporttracker-prod-fit` speichern Datenbank bzw. FIT-Dateien. Das App-Volume wird unter `/data` eingebunden und enthält auch `originals/` und `.incoming/`. Container-Neuerstellung löscht diese externen Volumes nicht. Compose-Datei, Image-Referenz und Secrets liegen außerhalb der Datenvolumes.
 
+Die dedizierte Proxmox-VM, ein lokaler Reverse Proxy für LAN-Zugriff und der zusätzliche obligatorische SPDX-/Trivy-Gate vor jedem Deployment sind in [docs/proxmox-deployment.md](proxmox-deployment.md) beschrieben.
+
 ## Installation und Betrieb
 
 ### Image-Veröffentlichung
