@@ -469,7 +469,7 @@ button.primary { color: var(--color-ink); background: var(--color-accent); borde
 .json-panel { display: grid; gap: .5rem; }
 .json-panel h2, .import-preview h3 { margin: 0; color: var(--color-ink); }
 .json-panel label { color: var(--color-muted); font-size: .85rem; font-weight: 700; }
-.json-panel input[type="file"] { max-width: 100%; min-height: 44px; }
+.json-panel input[type="file"] { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; }
 .import-preview { padding: .8rem; background: var(--color-canvas); border-radius: var(--radius-control); }
 .import-preview p { margin: .25rem 0; }
 .phase-list { display: grid; gap: .5rem; margin: 0; padding: 0; list-style: none; }

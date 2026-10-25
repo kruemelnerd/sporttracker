@@ -84,7 +84,7 @@ test('training plan CRUD, week navigation and JSON export/import persist in the 
   await expect(page.getByRole('button', { name: 'Import bestätigen' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Training bearbeiten: Verschobener Lauf' })).toBeVisible()
 
-  for (const width of [375, 768, 1024, 1440]) {
+  for (const width of [320, 375, 390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 })
     const scrollWidth = await page.evaluate(() => document.documentElement.scrollWidth)
     if (scrollWidth > width) {

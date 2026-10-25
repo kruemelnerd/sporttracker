@@ -228,8 +228,8 @@ async function retry(item: QueueItem) {
 .page-heading a { min-height: 44px; display: inline-flex; align-items: center; }
 .upload-panel { display: grid; justify-items: start; gap: 1rem; padding: 1.5rem; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); }
 .upload-panel h2, .import-view section[aria-labelledby="queue-title"] h2 { margin: 0; color: var(--color-ink); font-size: 1.125rem; }
-.file-picker { display: grid; gap: .5rem; font-weight: 600; }
-.file-picker input { max-width: 100%; min-height: 44px; }
+.file-picker { display: grid; gap: .5rem; width: 100%; min-width: 0; font-weight: 600; }
+.file-picker input { width: 100%; min-width: 0; max-width: 100%; min-height: 44px; }
 .drop-zone { width: 100%; min-height: 7rem; padding: 1rem; color: var(--color-muted); background: var(--color-canvas); border: 2px dashed #9aabba; border-radius: var(--radius-control); cursor: pointer; }
 .drop-zone:hover { border-color: var(--color-accent-strong); background: var(--color-accent-subtle); }
 .start-button, .retry-button { min-height: 44px; padding: .625rem 1rem; color: white; background: var(--color-accent-strong); border: 0; border-radius: var(--radius-control); font-weight: 600; cursor: pointer; }
@@ -243,7 +243,7 @@ async function retry(item: QueueItem) {
 @media (max-width: 639px) {
   .page-heading { align-items: flex-start; flex-direction: column; }
   .intervals-card { padding: 1rem; }
-  .intervals-heading { align-items: flex-start; }
+  .intervals-heading { align-items: flex-start; flex-direction: column; }
   .upload-panel { padding: 1rem; }
   .queue li { grid-template-columns: minmax(0, 1fr); }
   .queue-state, .queue-message, .retry-button { grid-column: 1; grid-row: auto; }

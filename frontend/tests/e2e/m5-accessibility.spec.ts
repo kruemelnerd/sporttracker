@@ -69,7 +69,7 @@ test('all M5 views fit target widths and capture visual checkpoints', async ({ p
   await routeData(page)
   await mkdir('/tmp/opencode/sporttracker-m5', { recursive: true })
 
-  for (const width of [375, 768, 1024, 1440]) {
+  for (const width of [320, 375, 390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 })
 
     await page.goto('/')
