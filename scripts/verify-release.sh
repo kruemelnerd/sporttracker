@@ -50,11 +50,20 @@ jq -e --arg digest "${digest#sha256:}" '
     and (.verificationResult.statement.predicate | .spdxVersion == "SPDX-2.3"
       and (.SPDXID | type == "string" and startswith("SPDXRef-"))
       and (.name | type == "string" and length > 0)
-      and (.packages | type == "array" and length > 0)))' <<<"$sbom" >/dev/null || {
+      and (.packages | type == "array" and length > 0
+        and all(.[];
+          (.SPDXID | type == "string" and startswith("SPDXRef-"))
+          and (.name | type == "string" and length > 0)
+          and (.downloadLocation | type == "string" and length > 0)
+          and (.filesAnalyzed | type == "boolean")
+          and (.licenseConcluded | type == "string" and length > 0)
+          and (.licenseDeclared | type == "string" and length > 0)
+          and (.copyrightText | type == "string" and length > 0)))))' <<<"$sbom" >/dev/null || {
   echo 'Verified SBOM is not a non-empty SPDX-2.3 document for the requested image digest' >&2
   exit 1
 }
 
-trivy image --scanners vuln,misconfig,secret --severity HIGH,CRITICAL --exit-code 1 "$image"
+trivy image --scanners vuln,misconfig,secret --image-config-scanners misconfig,secret \
+  --severity HIGH,CRITICAL --exit-code 1 "$image"
 
 echo "Verified $image from kruemelnerd/sporttracker@$commit (main; $digest)"

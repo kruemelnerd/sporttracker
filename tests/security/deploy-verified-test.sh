@@ -28,7 +28,7 @@ if [[ $1 == attestation && $2 == verify && $3 == --help ]]; then exit 0; fi
 predicate_type=https://slsa.dev/provenance/v1
 if [[ " $* " == *' https://spdx.dev/Document/v2.3 '* ]]; then predicate_type=https://spdx.dev/Document/v2.3; fi
 predicate='{}'
-[[ $predicate_type != https://spdx.dev/Document/v2.3 ]] || predicate='{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"fixture","packages":[{"name":"fixture"}]}'
+[[ $predicate_type != https://spdx.dev/Document/v2.3 ]] || predicate='{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"fixture","packages":[{"SPDXID":"SPDXRef-Package-fixture","name":"fixture","downloadLocation":"NOASSERTION","filesAnalyzed":false,"licenseConcluded":"NOASSERTION","licenseDeclared":"NOASSERTION","copyrightText":"NOASSERTION"}]}'
 jq -cn --arg type "$predicate_type" --argjson predicate "$predicate" '[{verificationResult:{statement:{predicateType:$type,subject:[{digest:{sha256:"5bbc988288cf286507f0c6a7cd1c38ecf8c977c97d154ed21ce939a07837daf5"}}],predicate:$predicate}}}]'
 SH
 cat >"$tmp/bin/trivy" <<'SH'
