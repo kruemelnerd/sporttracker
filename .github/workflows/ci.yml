@@ -306,7 +306,7 @@ jobs:
           set -euo pipefail
           current_main=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
           test "$current_main" = "$GITHUB_SHA"
-          docker buildx imagetools create --tag "$IMAGE:stable" "$DIGEST_REF"
+          docker buildx imagetools create --prefer-index=false --tag "$IMAGE:stable" "$DIGEST_REF"
           stable_digest=$(docker buildx imagetools inspect --raw "$IMAGE:stable" | sha256sum | cut -d ' ' -f 1)
           test "sha256:$stable_digest" = "$IMAGE_DIGEST"
           {
