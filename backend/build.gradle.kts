@@ -82,15 +82,39 @@ dependencies {
 tasks.withType<Test> {
     useJUnitPlatform()
     outputs.upToDateWhen { false }
-    systemProperty("spring.datasource.url", "jdbc:postgresql://127.0.0.1:55432/running_dashboard_e2e")
-    systemProperty("spring.datasource.username", "running_dashboard_e2e")
-    systemProperty("spring.datasource.password", "running_dashboard_e2e")
+    maxParallelForks = 1
     doFirst {
-        val reset = ProcessBuilder("docker", "compose", "-p", "sporttracker-m4-e2e", "-f", "../compose.e2e.yaml", "exec", "-T", "db",
-                "psql", "-v", "ON_ERROR_STOP=1", "-U", "running_dashboard_e2e", "-d", "running_dashboard_e2e", "-c",
+        val runId = System.getenv("TEST_RUN_ID") ?: throw GradleException("TEST_RUN_ID is required; run tests through scripts/test-all.sh")
+        val project = System.getenv("TEST_COMPOSE_PROJECT") ?: throw GradleException("TEST_COMPOSE_PROJECT is required")
+        val database = System.getenv("TEST_DATABASE_NAME") ?: throw GradleException("TEST_DATABASE_NAME is required")
+        val username = System.getenv("TEST_DATABASE_USERNAME") ?: throw GradleException("TEST_DATABASE_USERNAME is required")
+        val password = System.getenv("TEST_DATABASE_PASSWORD") ?: throw GradleException("TEST_DATABASE_PASSWORD is required")
+        val port = System.getenv("TEST_DATABASE_PORT") ?: throw GradleException("TEST_DATABASE_PORT is required")
+        val databaseUrl = System.getenv("TEST_DATABASE_URL") ?: throw GradleException("TEST_DATABASE_URL is required")
+        val dataDirectory = System.getenv("TEST_DATA_DIRECTORY") ?: throw GradleException("TEST_DATA_DIRECTORY is required")
+        if (!runId.matches(Regex("[a-f0-9]{24}")) || project != "sporttracker-ci-$runId" ||
+            database != "running_dashboard_test_$runId" || username != "running_dashboard_test_$runId" ||
+            !port.matches(Regex("[1-9][0-9]{0,4}")) || port.toInt() > 65535 ||
+            databaseUrl != "jdbc:postgresql://127.0.0.1:$port/$database" ||
+            dataDirectory != "/tmp/running-dashboard-test-$runId") {
+            throw GradleException("Refusing test database with inconsistent run identity")
+        }
+        systemProperty("spring.datasource.url", databaseUrl)
+        systemProperty("spring.datasource.username", username)
+        systemProperty("spring.datasource.password", password)
+        environment("DATABASE_URL", databaseUrl)
+        environment("DATABASE_USERNAME", username)
+        environment("DATABASE_PASSWORD", password)
+        environment("DATA_DIRECTORY", dataDirectory)
+        environment("INTERVALS_ICU_ENABLED", "false")
+        environment("INTERVALS_ICU_API_KEY", "")
+        val marker = "sporttracker-test:$runId:$project"
+        val reset = ProcessBuilder("docker", "compose", "-p", project, "-f", "../compose.test.yaml", "exec", "-T", "db",
+                "psql", "-X", "-v", "ON_ERROR_STOP=1", "-U", username, "-d", database, "-c",
                 """DO ${'$'}${'$'} BEGIN
-                    IF current_database() <> 'running_dashboard_e2e' OR current_user <> 'running_dashboard_e2e' THEN
-                        RAISE EXCEPTION 'Refusing to reset non-test database';
+                    IF current_database() <> '$database' OR current_user <> '$username' OR
+                       (SELECT shobj_description(oid, 'pg_database') FROM pg_database WHERE datname = current_database()) <> '$marker' THEN
+                        RAISE EXCEPTION 'Refusing to reset database with an unexpected identity';
                     END IF;
                     IF to_regclass('public.activity') IS NOT NULL THEN EXECUTE 'TRUNCATE activity CASCADE'; END IF;
                     IF to_regclass('public.training_plan') IS NOT NULL THEN EXECUTE 'TRUNCATE training_plan CASCADE'; END IF;

@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: ${TEST_DATABASE_NAME:?TEST_DATABASE_NAME is required}
+      POSTGRES_USER: ${TEST_DATABASE_USERNAME:?TEST_DATABASE_USERNAME is required}
+      POSTGRES_PASSWORD: ${TEST_DATABASE_PASSWORD:?TEST_DATABASE_PASSWORD is required}
+    ports:
+      - "127.0.0.1::5432"
+    volumes:
+      - test-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  test-postgres:
