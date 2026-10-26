@@ -5,7 +5,7 @@ umask 077
 usage() { echo "Usage: $0 --docker-context NAME --backup-dir DIR --project NEW_PROJECT --compose-file FILE --env-file FILE --confirm-empty-project NEW_PROJECT" >&2; }
 fail() { echo "restore: $*" >&2; exit 1; }
 
-docker_context= backup_dir= project= compose_file= env_file= confirmation=
+docker_context='' backup_dir='' project='' compose_file='' env_file='' confirmation=''
 while (($#)); do
   case "$1" in
     --docker-context) (($# >= 2)) || { usage; exit 2; }; docker_context=$2; shift 2 ;;

@@ -5,7 +5,7 @@ umask 077
 usage() { echo "Usage: $0 --docker-context NAME --project NAME --compose-file FILE --env-file FILE --output-dir DIR" >&2; }
 fail() { echo "backup: $*" >&2; exit 1; }
 
-docker_context= project= compose_file= env_file= output_dir=
+docker_context='' project='' compose_file='' env_file='' output_dir=''
 while (($#)); do
   case "$1" in
     --docker-context) (($# >= 2)) || { usage; exit 2; }; docker_context=$2; shift 2 ;;
@@ -28,7 +28,7 @@ docker=(docker --context "$docker_context")
 command -v tar >/dev/null || fail "tar is required"
 command -v sha256sum >/dev/null || fail "sha256sum is required"
 output_dir=$(realpath -m -- "$output_dir")
-app_id= app_stopped=0 tmp=
+app_id='' app_stopped=0 tmp=''
 published=
 cleanup() { [[ -z $tmp ]] || rm -rf -- "$tmp"; }
 restart_app() {
