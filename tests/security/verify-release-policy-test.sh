@@ -27,10 +27,11 @@ if [[ $1 == attestation && $2 == verify && $3 == --help ]]; then exit 0; fi
 [[ ${GH_TEST_MODE:-} != missing-attestation ]] || exit 1
 predicate_type=https://slsa.dev/provenance/v1
 if [[ " $* " == *' https://spdx.dev/Document/v2.3 '* ]]; then predicate_type=https://spdx.dev/Document/v2.3; fi
-sbom='{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"fixture","packages":[{"SPDXID":"SPDXRef-Package-fixture","name":"fixture","downloadLocation":"NOASSERTION","filesAnalyzed":false,"licenseConcluded":"NOASSERTION","licenseDeclared":"NOASSERTION","copyrightText":"NOASSERTION"}]}'
+sbom='{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"fixture","dataLicense":"CC0-1.0","documentNamespace":"https://example.test/spdx/fixture","creationInfo":{"created":"2026-10-25T00:00:00Z","creators":["Tool: fixture"]},"packages":[{"SPDXID":"SPDXRef-Package-fixture","name":"fixture","downloadLocation":"NOASSERTION","filesAnalyzed":false,"licenseConcluded":"NOASSERTION","licenseDeclared":"NOASSERTION","copyrightText":"NOASSERTION"}]}'
 [[ ${GH_TEST_MODE:-} != empty-sbom || $predicate_type != https://spdx.dev/Document/v2.3 ]] || sbom='{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"fixture","packages":[]}'
 [[ ${GH_TEST_MODE:-} != malformed-sbom || $predicate_type != https://spdx.dev/Document/v2.3 ]] || sbom='{"spdxVersion":"SPDX-2.2","SPDXID":"wrong","name":"","packages":[]}'
 [[ ${GH_TEST_MODE:-} != malformed-package || $predicate_type != https://spdx.dev/Document/v2.3 ]] || sbom='{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"fixture","packages":[{"name":"fixture"}]}'
+[[ ${GH_TEST_MODE:-} != incomplete-document || $predicate_type != https://spdx.dev/Document/v2.3 ]] || sbom='{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","name":"fixture","packages":[{"SPDXID":"SPDXRef-Package-fixture","name":"fixture","downloadLocation":"NOASSERTION","filesAnalyzed":false,"licenseConcluded":"NOASSERTION","licenseDeclared":"NOASSERTION","copyrightText":"NOASSERTION"}]}'
 digest=5bbc988288cf286507f0c6a7cd1c38ecf8c977c97d154ed21ce939a07837daf5
 [[ ${GH_TEST_MODE:-} != wrong-subject ]] || digest=$(printf 'a%.0s' {1..64})
 jq -cn --arg type "$predicate_type" --arg digest "$digest" --argjson predicate "$([[ $predicate_type == https://spdx.dev/Document/v2.3 ]] && printf '%s' "$sbom" || printf '{}')" '[{verificationResult:{statement:{predicateType:$type,subject:[{digest:{sha256:$digest}}],predicate:$predicate}}}]'
@@ -59,6 +60,10 @@ if PATH="$tmp/bin:$PATH" GH_TEST_MODE=malformed-sbom verify >/dev/null 2>&1; the
 fi
 if PATH="$tmp/bin:$PATH" GH_TEST_MODE=malformed-package verify >/dev/null 2>&1; then
   echo 'Verifier accepted a package without required SPDX fields' >&2
+  exit 1
+fi
+if PATH="$tmp/bin:$PATH" GH_TEST_MODE=incomplete-document verify >/dev/null 2>&1; then
+  echo 'Verifier accepted an SPDX document missing required document metadata' >&2
   exit 1
 fi
 if PATH="$tmp/bin:$PATH" GH_TEST_MODE=missing-attestation verify >/dev/null 2>&1; then

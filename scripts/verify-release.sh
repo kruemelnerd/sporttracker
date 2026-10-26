@@ -48,8 +48,13 @@ jq -e --arg digest "${digest#sha256:}" '
   any(.[]; .verificationResult.statement.predicateType == "https://spdx.dev/Document/v2.3"
     and any(.verificationResult.statement.subject[]?; .digest.sha256 == $digest)
     and (.verificationResult.statement.predicate | .spdxVersion == "SPDX-2.3"
-      and (.SPDXID | type == "string" and startswith("SPDXRef-"))
+      and .dataLicense == "CC0-1.0"
+      and .SPDXID == "SPDXRef-DOCUMENT"
       and (.name | type == "string" and length > 0)
+      and (.documentNamespace | type == "string" and (startswith("https://") or startswith("http://")))
+      and (.creationInfo | type == "object"
+        and (.created | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T.+(Z|[+-][0-9]{2}:[0-9]{2})$"))
+        and (.creators | type == "array" and length > 0 and all(.[]; type == "string" and length > 0)))
       and (.packages | type == "array" and length > 0
         and all(.[];
           (.SPDXID | type == "string" and startswith("SPDXRef-"))
