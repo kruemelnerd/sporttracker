@@ -18,7 +18,11 @@ done
 [[ $image =~ ^ghcr\.io/kruemelnerd/sporttracker@sha256:[0-9a-f]{64}$ ]] || { usage; exit 2; }
 [[ -f $env_file && ! -L $env_file ]] || fail 'private Compose environment file not found or is a symlink'
 mode=$(stat -c '%a' "$env_file") || fail 'cannot inspect Compose environment file permissions'
-(( (8#$mode & 077) == 0 )) || fail 'Compose environment file must not be accessible to group or other users'
+(( (8#$mode & 077) == 0 && (8#$mode & 0200) != 0 )) || fail 'Compose environment file must be private and owner-writable'
+[[ $(stat -c '%u' "$env_file") == "$EUID" ]] || fail 'Compose environment file must be owned by the deployment user'
+env_dir=$(dirname -- "$env_file")
+dir_mode=$(stat -c '%a' "$env_dir") || fail 'cannot inspect Compose environment directory permissions'
+(( (8#$dir_mode & 022) == 0 )) || fail 'Compose environment directory must not be group- or world-writable'
 command -v docker >/dev/null || fail 'Docker CLI is required'
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
@@ -27,8 +31,9 @@ compose_file=$repo_root/compose.production.yaml
 docker=(docker)
 compose=("${docker[@]}" compose --env-file "$env_file" -p "$project" -f "$compose_file")
 override=$(mktemp)
-rollback_override=
-cleanup() { rm -f -- "$override"; [[ -z $rollback_override ]] || rm -f -- "$rollback_override"; }
+saved_env=
+updated_env=
+cleanup() { rm -f -- "$override"; [[ -z $updated_env ]] || rm -f -- "$updated_env"; }
 trap cleanup EXIT
 
 # The verifier must finish before Compose inspects or changes deployment resources.
@@ -36,6 +41,12 @@ trap cleanup EXIT
 printf 'services:\n  app:\n    image: "%s"\n' "$image" >"$override"
 compose+=( -f "$override" )
 "${compose[@]}" config --quiet || fail 'production Compose configuration is invalid'
+
+[[ $(grep -c '^SPORTTRACKER_IMAGE=' "$env_file" || true) == 1 ]] || fail 'Compose environment must contain exactly one SPORTTRACKER_IMAGE assignment'
+[[ $(sed -n 's/^SPORTTRACKER_IMAGE=//p' "$env_file") == ghcr.io/kruemelnerd/sporttracker ]] || fail 'Compose environment has an unexpected image repository'
+[[ $(grep -c '^SPORTTRACKER_IMAGE_DIGEST=' "$env_file" || true) == 1 ]] || fail 'Compose environment must contain exactly one SPORTTRACKER_IMAGE_DIGEST assignment'
+old_digest=$(sed -n 's/^SPORTTRACKER_IMAGE_DIGEST=//p' "$env_file")
+[[ $old_digest =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'saved image digest is missing or invalid'
 
 for volume in sporttracker-prod-postgres sporttracker-prod-fit; do
   "${docker[@]}" volume inspect "$volume" >/dev/null 2>&1 || fail "required external volume is missing: $volume (create it deliberately; no volumes were created)"
@@ -50,17 +61,24 @@ if [[ -n $old_id ]]; then
   [[ $old_image =~ ^ghcr\.io/kruemelnerd/sporttracker@sha256:[0-9a-f]{64}$ ]] || fail 'existing app image is not a trusted digest reference; refusing replacement'
 fi
 
+saved_env="${env_file}.previous.$(date -u +%Y%m%dT%H%M%S.%NZ)"
+[[ ! -e $saved_env && ! -L $saved_env ]] || fail 'previous-configuration backup path already exists; refusing ambiguous update'
+cp -p -- "$env_file" "$saved_env" || fail 'could not preserve previous Compose environment'
+updated_env=$(mktemp "${env_file}.tmp.XXXXXXXX") || fail 'could not prepare atomic Compose environment update'
+if ! awk -v digest="${image##*@}" '
+  /^SPORTTRACKER_IMAGE_DIGEST=/ { count++; print "SPORTTRACKER_IMAGE_DIGEST=" digest; next }
+  { print }
+  END { if (count != 1) exit 1 }
+' "$env_file" >"$updated_env"; then
+  fail 'could not safely update saved image digest'
+fi
+chmod "$mode" "$updated_env" || fail 'could not preserve Compose environment permissions'
+mv -f -- "$updated_env" "$env_file" || fail "could not atomically persist verified digest; previous configuration is at $saved_env"
+updated_env=
+
 if "${compose[@]}" up -d --wait --wait-timeout 180 app; then
-  echo "Ready: $image"
+  echo "Ready: $image (saved configuration: $env_file; previous: $saved_env)"
   exit 0
 fi
 
-if [[ -n $old_image ]]; then
-  echo 'New app failed readiness; restoring the previous digest.' >&2
-  rollback_override=$(mktemp)
-  printf 'services:\n  app:\n    image: "%s"\n' "$old_image" >"$rollback_override"
-  rollback=("${docker[@]}" compose --env-file "$env_file" -p "$project" -f "$compose_file" -f "$rollback_override")
-  "${rollback[@]}" up -d --wait --wait-timeout 180 app || fail 'rollback readiness failed; inspect containers and database schema immediately'
-  fail 'new app failed readiness; previous digest restored'
-fi
-fail 'initial app failed readiness; no previous app version existed to restore'
+fail 'new app failed readiness; no automatic image rollback was attempted because Flyway may have changed the database schema. Keep resources intact and perform the documented manual recovery/restore procedure.'

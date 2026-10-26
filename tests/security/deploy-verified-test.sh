@@ -5,7 +5,7 @@ root=$(cd "$(dirname "$0")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir "$tmp/bin"
-touch "$tmp/compose.env"
+printf 'SPORTTRACKER_IMAGE=ghcr.io/kruemelnerd/sporttracker\nSPORTTRACKER_IMAGE_DIGEST=sha256:%064d\n' 0 >"$tmp/compose.env"
 chmod 600 "$tmp/compose.env"
 cat >"$tmp/bin/docker" <<'SH'
 #!/usr/bin/env bash
@@ -19,6 +19,7 @@ if [[ $1 == image && $2 == inspect ]]; then
   exit 0
 fi
 if [[ $1 == volume && $2 == inspect ]]; then exit 0; fi
+if [[ $1 == compose && " $* " == *' up -d --wait --wait-timeout 180 app '* && ${COMPOSE_UP_FAIL:-} == true ]]; then exit 1; fi
 exit 0
 SH
 cat >"$tmp/bin/gh" <<'SH'
@@ -49,14 +50,28 @@ if PATH="$tmp/bin:$PATH" "$root/scripts/deploy-verified.sh" --env-file "$tmp/com
   echo 'Deployment continued after release verification failed' >&2
   exit 1
 fi
+grep -q 'SPORTTRACKER_IMAGE_DIGEST=sha256:'"$(printf '%064d' 0)"'$' "$tmp/compose.env" || { echo 'Failed verification changed the saved digest' >&2; exit 1; }
 grep -q '^pull ' "$DOCKER_CALL_LOG" || { echo 'Deployment did not invoke release verification' >&2; exit 1; }
 if grep -q 'compose ' "$DOCKER_CALL_LOG"; then
   echo 'Compose was invoked before release verification succeeded' >&2
   exit 1
 fi
 PATH="$tmp/bin:$PATH" VERIFY_SUCCESS=true "$root/scripts/deploy-verified.sh" --env-file "$tmp/compose.env" --project m831-test "$image" >/dev/null
+grep -Fxq "SPORTTRACKER_IMAGE_DIGEST=${image##*@}" "$tmp/compose.env" || { echo 'Deployment did not persist the verified digest' >&2; exit 1; }
+compgen -G "$tmp/compose.env.previous.*" >/dev/null || { echo 'Previous Compose configuration was not retained' >&2; exit 1; }
 grep -q 'compose .*config --quiet' "$DOCKER_CALL_LOG" || { echo 'Deployment did not validate Compose configuration' >&2; exit 1; }
 grep -q 'volume inspect sporttracker-prod-postgres' "$DOCKER_CALL_LOG" || { echo 'Deployment did not protect/check the PostgreSQL volume' >&2; exit 1; }
 grep -q 'volume inspect sporttracker-prod-fit' "$DOCKER_CALL_LOG" || { echo 'Deployment did not protect/check the FIT volume' >&2; exit 1; }
 grep -q 'compose .*up -d --wait --wait-timeout 180 app' "$DOCKER_CALL_LOG" || { echo 'Deployment did not wait for app readiness' >&2; exit 1; }
+if grep -q 'restoring the previous digest\|compose .*rollback' "$DOCKER_CALL_LOG"; then
+  echo 'Deployment attempted an unsafe automatic image rollback' >&2
+  exit 1
+fi
+
+failure_log=$tmp/failure.log
+if PATH="$tmp/bin:$PATH" VERIFY_SUCCESS=true COMPOSE_UP_FAIL=true "$root/scripts/deploy-verified.sh" --env-file "$tmp/compose.env" --project m831-test "$image" >"$failure_log" 2>&1; then
+  echo 'Deployment reported success after a readiness failure' >&2
+  exit 1
+fi
+grep -q 'no automatic image rollback.*Flyway' "$failure_log" || { echo 'Readiness failure did not require manual database-aware recovery' >&2; exit 1; }
 echo 'Rejected mutable references, stopped before Compose on failed verification, and exercised the verified Compose/readiness path with isolated stubs.'
