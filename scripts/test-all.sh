@@ -135,16 +135,26 @@ verify_reset_guard() {
   db -c "COMMENT ON DATABASE \"$TEST_DATABASE_NAME\" IS 'sporttracker-test:$TEST_RUN_ID:$TEST_COMPOSE_PROJECT'" >/dev/null
 }
 
+run_release_security_tests() {
+  "$ROOT_DIR/tests/security/verify-release-test.sh" &&
+    "$ROOT_DIR/tests/security/verify-release-policy-test.sh" &&
+    "$ROOT_DIR/tests/security/deploy-verified-test.sh" &&
+    "$ROOT_DIR/tests/security/proxmox-preflight-test.sh"
+}
+
+run_backend_tests() { (cd "$ROOT_DIR/backend" && ./gradlew test); }
+run_playwright_tests() { (cd "$ROOT_DIR/frontend" && npx playwright test --config=playwright.config.ts); }
+
 run_tests() {
-  run_step 'Release verification, deployment, and VM preflight security tests' bash -c '"$1/tests/security/verify-release-test.sh" && "$1/tests/security/verify-release-policy-test.sh" && "$1/tests/security/deploy-verified-test.sh" && "$1/tests/security/proxmox-preflight-test.sh"' _ "$ROOT_DIR" || return $?
+  run_step 'Release verification, deployment, and VM preflight security tests' run_release_security_tests || return $?
   run_step 'Reject mismatched database identity before reset' verify_reset_guard || return $?
-  run_step 'Backend Gradle test suite' bash -c 'cd "$1/backend" && ./gradlew test' _ "$ROOT_DIR" || return $?
+  run_step 'Backend Gradle test suite' run_backend_tests || return $?
   run_step 'Frontend dependency install' npm --prefix "$ROOT_DIR/frontend" ci || return $?
   run_step 'Frontend TypeScript typecheck' npm --prefix "$ROOT_DIR/frontend" run typecheck || return $?
   run_step 'Frontend unit tests' npm --prefix "$ROOT_DIR/frontend" run test:unit || return $?
   run_step 'Frontend production build' npm --prefix "$ROOT_DIR/frontend" run build || return $?
   run_step 'Playwright Chromium installation' npm --prefix "$ROOT_DIR/frontend" exec playwright -- install chromium || return $?
-  run_step 'Playwright E2E suite' bash -c 'cd "$1/frontend" && npx playwright test --config=playwright.config.ts' _ "$ROOT_DIR" || return $?
+  run_step 'Playwright E2E suite' run_playwright_tests || return $?
 }
 
 cleanup_owned_resources() {
@@ -206,7 +216,7 @@ finish() {
     echo "Keeping this run's isolated resources for debugging: $TEST_COMPOSE_PROJECT"
   else
     if ! cleanup_owned_resources; then
-      echo 'Failed to safely clean up this run’s test resources' >&2
+      echo "Failed to safely clean up this run's test resources" >&2
       status=1
       RESULT=FAIL
     fi

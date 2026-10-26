@@ -5,7 +5,7 @@ umask 077
 usage() { echo "Usage: $0 --env-file PRIVATE_FILE --project COMPOSE_PROJECT ghcr.io/kruemelnerd/sporttracker@sha256:<64 lowercase hex>" >&2; }
 fail() { echo "deploy: $*" >&2; exit 1; }
 
-env_file= project= image=
+env_file='' project='' image=''
 while (($#)); do
   case "$1" in
     --env-file) (($# >= 2)) || { usage; exit 2; }; env_file=$2; shift 2 ;;
@@ -33,6 +33,7 @@ compose=("${docker[@]}" compose --env-file "$env_file" -p "$project" -f "$compos
 override=$(mktemp)
 saved_env=
 updated_env=
+# shellcheck disable=SC2329
 cleanup() { rm -f -- "$override"; [[ -z $updated_env ]] || rm -f -- "$updated_env"; }
 trap cleanup EXIT
 
