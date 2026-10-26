@@ -2,6 +2,8 @@
 
 ## Architektur
 
+Für die phasenweise VM-Erstinstallation siehe [Proxmox First Install](proxmox-first-install.md).
+
 `compose.production.yaml` betreibt zwei Container: Spring Boot liefert zugleich die Vue-Oberfläche und REST-API aus einem JAR; PostgreSQL 18.6 ist der zweite Dienst. Compose stellt ein internes Netzwerk bereit. Nur die Anwendung veröffentlicht standardmäßig `127.0.0.1:8080`; PostgreSQL hat keinen Host-Port. LAN-Zugriff erfordert eine bewusst konfigurierte Firewall bzw. einen Reverse Proxy. Es gibt keinen Docker-Socket-Mount.
 
 Die externen Volumes `sporttracker-prod-postgres` und `sporttracker-prod-fit` speichern Datenbank bzw. FIT-Dateien. Das App-Volume wird unter `/data` eingebunden und enthält auch `originals/` und `.incoming/`. Container-Neuerstellung löscht diese externen Volumes nicht. Compose-Datei, Image-Referenz und Secrets liegen außerhalb der Datenvolumes.
@@ -45,7 +47,7 @@ Voraussetzungen: Linux-VM mit Bash und GNU coreutils (`realpath`, `stat`, `sha25
 
 - Das PostgreSQL-Volume enthält den vollständigen Datenbankzustand. Das separate FIT-Volume enthält Originaldateien, Zwischenablagen und weitere App-Dateien.
 - `compose.yaml`/`./dev.sh` sind lokale Entwicklung; `compose.production.yaml` verwendet externe Volumes, dateibasierte Compose-Secrets, digest-gepinntes Image und bindet den App-Port nur an Loopback. Testressourcen müssen ein eigenes Compose-Projekt und eigene Volumes verwenden.
-- Flyway ist beim App-Start aktiv und migriert vor Nutzung der Anwendung. Ein Start nach Restore darf erst erfolgen, wenn Dump und FIT-Dateien vollständig wiederhergestellt und geprüft sind. Es gibt keinen automatischen Rollback/Reset.
+- Flyway ist beim App-Start aktiv und migriert vor Nutzung der Anwendung. Ein Start nach Restore darf erst erfolgen, wenn Dump und FIT-Dateien vollständig wiederhergestellt und geprüft sind. Ein fehlgeschlagener App-Start kann ein bereits migriertes Schema hinterlassen; `deploy-verified.sh` führt deshalb keinen automatischen Image-Rollback aus. Ein Container-Rollback ersetzt keine Datenbankwiederherstellung. Bei Fehlern Zustand erhalten und manuelle Wiederherstellung aus geprüftem Backup planen.
 - PostgreSQL-Major-Upgrades sind kein Image-Tag-Wechsel: vorher verifiziertes Backup und Restore-Probe, danach ein geplanter `pg_upgrade`-/Dump-Migrationspfad. Kein Major-Upgrade durch direkten Volume-Austausch.
 
 ## Backups
@@ -94,7 +96,7 @@ Readiness, API-Antworten und das tatsächliche Lesen wiederhergestellter FIT-Ori
 - Logs ohne Secrets prüfen: `docker compose ... logs --since=15m app db`. Container-Health mit `docker compose ... ps` und `/api/health` bzw. `/api/ready` kontrollieren.
 - Neustart ohne Datenlöschung: `docker compose ... restart app` oder `docker compose ... up -d`. Bei Fehlern Ursache prüfen; keine Volume-/Datenbank-Reparatur automatisieren.
 - Ressourcenlimits, Container-Logs und freien Platz auf Host/Volumes regelmäßig prüfen. Datenbank- und FIT-Volume wachsen unabhängig.
-- Image-Version: `docker compose ... images` und Container-Image-Digest via `docker inspect`; neue Images nur nach Backup, Release-Prüfung und geplantem Rollback-/Restore-Test deployen.
+- Image-Version: `docker compose ... images` und Container-Image-Digest via `docker inspect`; neue Images nur nach Backup, Release-Prüfung und geprüftem Restore-Pfad deployen. Der Deployment-Runner aktualisiert die gespeicherte Digest-Zeile atomar und bewahrt die vorige Compose-Umgebung auf, damit ein normaler Compose-Neustart nicht auf einen alten Digest zurückfällt.
 - Container laufen ohne Root (App UID 10001, PostgreSQL-Image-eigener Benutzer); App-Dateisysteme sind read-only, Capabilities reduziert, `no-new-privileges` aktiv. Secrets kommen als Dateien, nicht als Compose-Klartext-Umgebungswerte.
 - PostgreSQL-Port nicht öffentlich veröffentlichen. Zugriff auf Docker-Daemon entspricht Host-Root und ist auf Administratoren zu beschränken. Keine Docker-Socket-Mounts hinzufügen.
 - Sicherheitsupdates kontrolliert gegen PostgreSQL-Kompatibilität, Image-Digests und Restore-Test prüfen. Intervals.icu bleibt optional und ist im Produktions-Basis-Compose deaktiviert.

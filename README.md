@@ -46,7 +46,7 @@ Mit `Ctrl-C` werden Backend und Frontend beendet; PostgreSQL bleibt gestartet un
 
 ## Containerbetrieb
 
-Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie Backup und Restore siehe [docs/containerization.md](docs/containerization.md). Die vorbereitete Proxmox-VM-Architektur und den verpflichtenden verifizierten Deployment-Ablauf beschreibt [docs/proxmox-deployment.md](docs/proxmox-deployment.md). Der lokale Entwicklungsstart über `./dev.sh` bleibt davon unabhängig.
+Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie Backup und Restore siehe [docs/containerization.md](docs/containerization.md). Die schrittweise Ubuntu-24.04-Erstinstallation ist in [docs/proxmox-first-install.md](docs/proxmox-first-install.md) beschrieben; [docs/proxmox-deployment.md](docs/proxmox-deployment.md) ergänzt Architektur und verifizierten Deployment-Ablauf. Der lokale Entwicklungsstart über `./dev.sh` bleibt davon unabhängig.
 
 ## Intervals.icu
 

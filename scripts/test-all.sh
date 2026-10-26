@@ -136,7 +136,7 @@ verify_reset_guard() {
 }
 
 run_tests() {
-  run_step 'Release verification and safe deployment policy tests' bash -c '"$1/tests/security/verify-release-test.sh" && "$1/tests/security/verify-release-policy-test.sh" && "$1/tests/security/deploy-verified-test.sh"' _ "$ROOT_DIR" || return $?
+  run_step 'Release verification, deployment, and VM preflight security tests' bash -c '"$1/tests/security/verify-release-test.sh" && "$1/tests/security/verify-release-policy-test.sh" && "$1/tests/security/deploy-verified-test.sh" && "$1/tests/security/proxmox-preflight-test.sh"' _ "$ROOT_DIR" || return $?
   run_step 'Reject mismatched database identity before reset' verify_reset_guard || return $?
   run_step 'Backend Gradle test suite' bash -c 'cd "$1/backend" && ./gradlew test' _ "$ROOT_DIR" || return $?
   run_step 'Frontend dependency install' npm --prefix "$ROOT_DIR/frontend" ci || return $?

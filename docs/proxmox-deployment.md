@@ -1,11 +1,13 @@
 # Proxmox-Deployment vorbereiten
 
+Die konkrete, phasenweise Erstinstallationsanleitung für Ubuntu Server 24.04 steht in [proxmox-first-install.md](proxmox-first-install.md). Dieses Dokument beschreibt ergänzend Betriebsgrenzen und Release-Sicherheit.
+
 **Status: Vorbereitung; kein Proxmox- oder Produktiv-Deployment durchgeführt.** Diese Anleitung ist für eine dedizierte VM bestimmt. Sie setzt weder Container auf dem Proxmox-Host noch eingehenden Zugriff aus GitHub Actions voraus.
 
 ## Architektur und Voraussetzungen
 
-- Dedizierte VM mit Ubuntu Server LTS oder Debian Stable, aktuellen Sicherheitsupdates und Docker Engine aus dem offiziellen Docker-APT-Repository einschließlich Docker Compose Plugin. Installationsdetails: [Docker Engine auf Ubuntu](https://docs.docker.com/engine/install/ubuntu/) bzw. [Debian](https://docs.docker.com/engine/install/debian/).
-- Als Mindeststartpunkt 4 vCPU und 4 GiB RAM; empfohlen 4 vCPU und 8 GiB RAM. App und PostgreSQL sind jeweils auf 1 GiB RAM und 1,5 CPU begrenzt; zusätzlich braucht der Host Reserven für Betriebssystem, Docker, Dateisystemcache und Scan-/Backup-Arbeiten.
+- Dedizierte VM mit Ubuntu Server 24.04 LTS, aktuellen Sicherheitsupdates und Docker Engine aus dem offiziellen Docker-APT-Repository einschließlich Docker Compose Plugin.
+- Zielgröße 4 vCPU und 8 GiB RAM. App und PostgreSQL sind jeweils auf 1 GiB RAM und 1,5 CPU begrenzt; zusätzlich braucht der Host Reserven für Betriebssystem, Docker, Dateisystemcache und Scan-/Backup-Arbeiten.
 - Mindestens 40 GiB VM-System-/Docker-Speicher als Planungswert, nicht als Obergrenze. PostgreSQL- und FIT-Daten wachsen unabhängig davon; ihre Kapazität muss anhand des tatsächlichen Datenbestands geplant werden. Backupkopien gehören nicht ausschließlich auf die VM.
 - Netzwerk: VM erhält eine private LAN-Adresse per bestehendem DHCP/DNS oder bewusst eingerichteter DHCP-Reservierung. Keine feste Adresse ist hier vorgegeben. Keine Router-Portweiterleitung und keine öffentliche Freigabe.
 - Auf der VM läuft ein lokaler Reverse Proxy (z. B. Caddy oder Nginx) als Hostdienst. Die App bleibt auf `127.0.0.1:8080` veröffentlicht; der Proxy leitet Anfragen intern an `http://127.0.0.1:8080` weiter. Der Proxy lauscht auf der privaten VM-Netzwerkschnittstelle. PostgreSQL bleibt ausschließlich im Compose-Netz und erhält keinen Host-Port.
@@ -48,13 +50,13 @@ Keine Tags wie `stable` oder `sha-...` als Deployment-Eingabe verwenden. Vor jed
 6. Einen aktuellen Trivy-Image-Scan des Digest-Images durchführen. High- oder Critical-Befunde und Scan-/Datenbankfehler brechen den Ablauf ab.
 7. Erst nach erfolgreicher Prüfung Compose still validieren, die beiden erforderlichen externen Volumes nachweisen und anschließend den App-Service starten bzw. aktualisieren. Der Start wartet auf Compose-Readiness.
 
-Jede fehlgeschlagene Vorprüfung endet, bevor Compose ausgeführt wird. Fehlende externe Volumes werden nie automatisch erzeugt. Bei einem fehlgeschlagenen Update versucht das Skript, den vorherigen gesunden Digest wiederherzustellen; schlägt auch dieser Readiness-Check fehl, wird ein kritischer Fehler ausgegeben. Datenbankmigrationen sind nicht automatisch rückrollbar: vor Updates ist daher ein geprüftes Backup erforderlich, und ein App-Rollback garantiert keine Schema-Rückwärtskompatibilität.
+Jede fehlgeschlagene Release-Verifikation endet, bevor Compose ausgeführt wird. Fehlende externe Volumes werden nie automatisch erzeugt. Nach erfolgreicher Verifikation bewahrt der Runner die vorherige Compose-Umgebungsdatei unter einem eindeutigen `.previous.<UTC-Zeit>`-Namen und ersetzt den Digest atomar. Bei fehlgeschlagener Readiness wird kein automatischer Image-Rollback durchgeführt: Flyway kann das Schema bereits geändert haben. Der Runner bricht mit manueller Wiederherstellungserfordernis ab; Container-Rollback ist keine Datenbankwiederherstellung.
 
 ## Ersteinrichtung und Start
 
 1. VM sichern/härten, Updates einspielen, Administratorzugänge einschränken und Firewall wie oben beschrieben planen. Noch keine produktiven Daten importieren.
 2. Repository/Deployment-Dateien auf die VM holen und den freigegebenen Digest außerhalb von Git als Betriebswert bereitstellen. Die Produktionsdateien dürfen nicht durch lokale Entwicklungs-Compose-Dateien ersetzt werden.
-3. Vorhandene Volume-Namen kontrollieren. Nur wenn beide Volume-Namen nachweislich fehlen und eine bewusste Neuinstallation freigegeben ist, dürfen sie manuell angelegt werden:
+3. Vorhandene Volume-Namen kontrollieren. Nur wenn beide Volume-Namen nachweislich fehlen und eine bewusste Neuinstallation freigegeben ist, dürfen sie manuell angelegt werden. Siehe den Phasen-Stoppunkt in `proxmox-first-install.md`:
 
    ```bash
    docker volume inspect sporttracker-prod-postgres
@@ -68,7 +70,7 @@ Jede fehlgeschlagene Vorprüfung endet, bevor Compose ausgeführt wird. Fehlende
 
 4. Secret-Verzeichnis außerhalb des Repositories mit Zugriff nur für den Betriebsbenutzer erstellen. Secret-Dateien außerhalb der VM- oder Terminal-History generieren. Host-Dateirechte `0400`; PostgreSQL-Dateien müssen für Container-UID 999 und App-Configtree-Dateien für UID 10001 lesbar sein. App-URL-/Benutzerdateien dürfen keine Passwörter enthalten. Keine Secret-Werte als Kommandoargumente übergeben.
 5. Eine private Compose-Umgebungsdatei mit Modus `0600` anlegen. Sie enthält Dateipfade (`POSTGRES_ADMIN_PASSWORD_FILE`, `POSTGRES_APP_PASSWORD_FILE`, `APP_DATABASE_URL_FILE`, `APP_DATABASE_USERNAME_FILE`, `APP_DATABASE_PASSWORD_FILE`) sowie `SPORTTRACKER_IMAGE=ghcr.io/kruemelnerd/sporttracker` und `SPORTTRACKER_IMAGE_DIGEST=sha256:<freigegebener Digest>`. Keine Secret-Werte selbst eintragen.
-6. Für eine erste leere Installation oder ein Update denselben geprüften Digest als Argument verwenden:
+6. Für eine erste leere Installation oder ein Update denselben geprüften Digest als Argument verwenden. Nach erfolgreicher Prüfung wird die Digest-Zeile in `production.env` atomar aktualisiert und eine private Kopie der vorherigen Datei behalten:
 
    ```bash
    scripts/deploy-verified.sh \
@@ -79,7 +81,7 @@ Jede fehlgeschlagene Vorprüfung endet, bevor Compose ausgeführt wird. Fehlende
 
    Platzhalter vor Ausführung ersetzen. Das Skript startet ausschließlich `compose.production.yaml`, führt keine Datenmigration/Restore von Entwicklungsdaten durch und verändert keine Volumes. Es ist in diesem Meilenstein ausschließlich mit isolierten Testressourcen bzw. Stubs getestet worden; der tatsächliche Produktionsstart bleibt offen. Ein positiver lokaler Nachweis-Test war hier nicht möglich: vorhandenes `gh` 2.46 unterstützt `gh attestation verify` nicht, und der vorhandene Login hat keinen `read:packages`-Scope. Der positive Attestierungsnachweis aus GitHub Actions ersetzt den späteren Verifier-Lauf auf der Ziel-VM nicht.
 
-7. Danach manuell Proxy konfigurieren, Firewall aus dem LAN testen, `docker compose ... ps` und `/api/ready` durch den Proxy prüfen. Für die Reverse-Proxy-Konfiguration wird keine feste VM-IP angenommen; private DNS-/DHCP-Planung erfolgt vor Ort.
+7. Bei Readiness-Fehlern erfolgt kein automatischer Container-Rollback, weil Flyway das Schema verändert haben kann. Manuelle Wiederherstellung aus verifiziertem Backup planen; keine Volumes löschen. Danach Proxy/Firewall aus dem LAN testen und `/api/ready` prüfen. Für Adressen wird nichts vorgegeben; DNS/DHCP ist vor Ort zu planen.
 
 Die optionale Intervals.icu-Erweiterung bleibt deaktiviert. Sie darf nur nach expliziter Freigabe einer externen Datensynchronisierung mit `compose.production.intervals.yaml` und einem separaten, geschützten API-Key aktiviert werden.
 
@@ -98,6 +100,6 @@ Backup-Timer, Rotation, verschlüsselte Offsite-Übertragung, Restore-Übungen u
 
 - Digest, Pull, GitHub-CLI, Signatur, Issuer/Workflow/Branch/Commit, SPDX-Dokument, Subject-Digest, Trivy oder Compose-Vorprüfung fehlerhaft: fail closed; keine Compose-Änderung durch `deploy-verified.sh`.
 - Volume fehlt oder Compose-Secrets/Env-Datei sind fehlerhaft: Start wird abgebrochen; Volumes/Secrets nicht automatisch anlegen oder reparieren.
-- Neue App wird nicht ready: vorherigen gesunden Digest wiederherzustellen wird versucht. Bei fehlgeschlagenem Rollback Stack nicht weiter verändern; Logs sichern (ohne Secrets), Zustand prüfen und Datenbankmigration/Backup-Plan beachten.
+- Neue App wird nicht ready: kein automatischer Digest-Rollback. Stack/Volumes nicht löschen oder weiter verändern; Logs ohne Secrets sichern, Schema-/Migrationsstand prüfen und manuelle Wiederherstellung aus Backup planen.
 - GHCR ohne Authentifizierung: derzeit HTTP 401; Zugriffstoken mit nur erforderlichem Paket-Lesezugriff außerhalb des Repositories konfigurieren.
 - Noch offen für M8.3.2: Proxmox-VM tatsächlich erstellen, OS-/Docker-Paketstände festlegen, private LAN-Adresse/DNS und LAN-CIDR vor Ort ermitteln, Proxy/Firewall/CA konfigurieren, Secret- und Backupziele einrichten, reale GHCR-Zugangsdaten auf der VM sicher bereitstellen, Verifikation und Trivy-Scan auf der VM wiederholen, Backup samt externer Kopie und isoliertem Restore nachweisen und erst danach einen produktiven Start separat freigeben.
