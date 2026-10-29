@@ -103,6 +103,9 @@ SOURCES_LIST = Path('/etc/apt/sources.list')
 KEYRINGS_DIR = Path('/etc/apt/keyrings')
 DOCKER_STATE_DIRS = tuple(map(Path, ('/var/lib/docker', '/var/lib/containerd', '/etc/docker', '/etc/containerd')))
 DOCKER_SOCKET = Path('/var/run/docker.sock')
+SYSTEMD_RUNTIME = Path('/run/systemd/system')
+SNAP_DOCKER_CURRENT = Path('/snap/docker/current')
+SNAP_ARCHIVES = Path('/var/lib/snapd/snaps')
 REPO_URL = 'https://github.com/kruemelnerd/sporttracker.git'
 GH_FLAGS = ('--repo', '--signer-workflow', '--source-ref', '--source-digest',
             '--cert-oidc-issuer', '--predicate-type', '--format', '--deny-self-hosted-runners')
@@ -182,6 +185,14 @@ def supports_flags(text, flags):
     return all(re.search(re.escape(flag) + r'(?![\w-])', text) for flag in flags)
 
 
+def guard_socket_activation():
+    if SYSTEMD_RUNTIME.is_dir() and shutil.which('systemctl'):
+        for unit in ('docker.service', 'containerd.service'):
+            loaded = checked(['systemctl', 'show', '--property=LoadState', '--value', unit], 'Lesender Dienststatus').strip()
+            if loaded == 'loaded' and run(['systemctl', 'is-active', '--quiet', unit]).returncode:
+                raise SetupError('Docker/containerd-Dienst inaktiv: kein Socket-Zugriff, der den Dienst oder Container unbeabsichtigt starten könnte; manuell prüfen.')
+
+
 def inventory():
     missing = set()
     for command, package in BASE_TOOLS.items():
@@ -194,6 +205,7 @@ def inventory():
         missing.add('ca-certificates')
     present = bool(shutil.which('docker'))
     if present:
+        guard_socket_activation()
         raw = checked(docker_command('info', '--format', '{{json .}}'),
                       'Lokaler Docker-Daemon (Berechtigung, Dienststatus oder LXC-Voraussetzungen prüfen)')
         try:
@@ -602,10 +614,11 @@ def add_sources(system, verified, existing, packages):
         sourcefile.chmod(0o644)
 
 
-def check_conflicts(docker_present):
+def check_conflicts():
     conflicts = [package for package in ('docker.io', 'docker-desktop', 'podman-docker', 'docker-compose',
                  'docker-compose-v2', 'docker-buildx', 'containerd', 'runc') if installed_version(package)]
-    if shutil.which('snap') and run(['snap', 'list', 'docker']).returncode == 0:
+    # Querying snapd itself could activate a stopped daemon through its socket.
+    if SNAP_DOCKER_CURRENT.exists() or SNAP_DOCKER_CURRENT.is_symlink() or any(SNAP_ARCHIVES.glob('docker_*.snap')):
         conflicts.append('Docker-Snap')
     if conflicts:
         raise SetupError('Konfliktvarianten erkannt: ' + ', '.join(conflicts) + '. Keine Deinstallation; Migration separat prüfen und bestätigen.')
@@ -614,7 +627,7 @@ def check_conflicts(docker_present):
 
 
 def start_new_docker():
-    if shutil.which('systemctl') and Path('/run/systemd/system').is_dir():
+    if shutil.which('systemctl') and SYSTEMD_RUNTIME.is_dir():
         checked(['systemctl', 'start', 'docker'], 'Start des neu installierten Docker-Dienstes')
     else:
         raise SetupError('Docker installiert, aber kein unterstütztes laufendes Init-System; Dienst manuell starten und --check wiederholen.')
@@ -691,8 +704,8 @@ def main(argv):
     if not check_only and os.geteuid() != 0:
         raise SetupError('Installation mit sudo ausführen; --check benötigt kein Root.')
     resource_warnings()
+    check_conflicts()
     missing, docker_present = inventory()
-    check_conflicts(docker_present)
     print('Setup ist kein Deployment und kein Release-Nachweis. Noch kein Release verifiziert und kein Image-Scan ausgeführt.')
     if system.arch != 'amd64':
         print('WARNUNG: Sporttracker veröffentlicht derzeit nur linux/amd64-Images; Werkzeuginstallation ist keine Deployment-Freigabe für diese Architektur.')

@@ -89,6 +89,10 @@ class InstallerTests(unittest.TestCase):
         self.candidate = "2.0"
         self.app.DOCKER_STATE_DIRS = (self.root / 'docker-data', self.root / 'containerd-data')
         self.app.DOCKER_SOCKET = self.root / 'docker.sock'
+        self.app.SYSTEMD_RUNTIME = self.root / 'systemd-runtime'
+        self.app.SNAP_DOCKER_CURRENT = self.root / 'snap-docker'
+        self.app.SNAP_ARCHIVES = self.root / 'snap-archives'
+        self.service_active = False
         self.gh_help = " ".join(self.app.GH_FLAGS) + " json"
         self.compose_help = '--wait --wait-timeout --quiet'
         self.patches = [
@@ -169,6 +173,10 @@ class InstallerTests(unittest.TestCase):
                 out = " M user-file\n"
             else:
                 self.fail("Unexpected Git operation: " + repr(args))
+        elif name == 'systemctl' and 'show' in args:
+            out = 'loaded\n'
+        elif name == 'systemctl' and 'is-active' in args:
+            status = 0 if self.service_active else 3
         elif name in {"systemctl", "service"}:
             self.fail("Unexpected service operation: " + repr(args))
         return subprocess.CompletedProcess(args, status, out, "sensitive-value" if status else "")
@@ -300,6 +308,27 @@ class InstallerTests(unittest.TestCase):
             self.app.inventory()
         self.assertFalse(any('install' in call for call in self.calls))
 
+    def test_inactive_docker_is_not_contacted_through_an_activating_socket(self):
+        self.app.SYSTEMD_RUNTIME.mkdir()
+        with self.assertRaisesRegex(self.app.SetupError, 'Socket|Dienst'):
+            self.app.inventory()
+        self.assertFalse(any('info' in call for call in self.calls))
+        self.assertFalse(any('start' in call or 'restart' in call for call in self.calls))
+
+    def test_active_docker_can_be_inspected_without_service_mutation(self):
+        self.app.SYSTEMD_RUNTIME.mkdir()
+        self.service_active = True
+        self.assertTrue(self.app.inventory()[1])
+        self.assertTrue(any('info' in call for call in self.calls))
+        self.assertFalse(any('start' in call or 'restart' in call for call in self.calls))
+
+    def test_snap_detection_does_not_activate_snapd(self):
+        self.app.SNAP_DOCKER_CURRENT.mkdir()
+        self.missing.discard('snap')
+        with self.assertRaisesRegex(self.app.SetupError, 'Snap'):
+            self.app.check_conflicts()
+        self.assertFalse(any(call[0] == 'snap' for call in self.calls))
+
     def test_inherited_apt_hooks_and_host_specific_insecure_tls_are_excluded(self):
         inherited = self.root / 'inherited.conf'
         inherited.write_text('Acquire::https::download.docker.com::Verify-Peer "false";\nDPkg::Post-Invoke { "/bin/false"; };\nAPT::Update::Post-Invoke { "/bin/false"; };\n')
@@ -411,7 +440,7 @@ class InstallerTests(unittest.TestCase):
     def test_conflicting_distro_docker_requires_manual_migration(self):
         self.installed['docker.io'] = '29.0'
         with self.assertRaisesRegex(self.app.SetupError, 'Migration'):
-            self.app.check_conflicts(True)
+            self.app.check_conflicts()
         self.assertFalse(any('remove' in call for call in self.calls))
 
 
