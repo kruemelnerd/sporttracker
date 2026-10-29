@@ -140,6 +140,7 @@ run_release_security_tests() {
     "$ROOT_DIR/tests/security/verify-release-test.sh" &&
     "$ROOT_DIR/tests/security/verify-release-policy-test.sh" &&
     "$ROOT_DIR/tests/security/deploy-verified-test.sh" &&
+    "$ROOT_DIR/tests/security/update-production-test.sh" &&
     "$ROOT_DIR/tests/security/proxmox-preflight-test.sh"
 }
 
