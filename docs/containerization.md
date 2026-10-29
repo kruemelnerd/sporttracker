@@ -2,15 +2,19 @@
 
 ## Architektur
 
-Für die phasenweise VM-Erstinstallation siehe [Proxmox First Install](proxmox-first-install.md).
+Für die phasenweise Linux-/VM-/LXC-Erstinstallation siehe [Linux First Install](proxmox-first-install.md).
 
 `compose.production.yaml` betreibt zwei Container: Spring Boot liefert zugleich die Vue-Oberfläche und REST-API aus einem JAR; PostgreSQL 18.6 ist der zweite Dienst. Compose stellt ein internes Netzwerk bereit. Nur die Anwendung veröffentlicht standardmäßig `127.0.0.1:8080`; PostgreSQL hat keinen Host-Port. LAN-Zugriff erfordert eine bewusst konfigurierte Firewall bzw. einen Reverse Proxy. Es gibt keinen Docker-Socket-Mount.
 
 Die externen Volumes `sporttracker-prod-postgres` und `sporttracker-prod-fit` speichern Datenbank bzw. FIT-Dateien. Das App-Volume wird unter `/data` eingebunden und enthält auch `originals/` und `.incoming/`. Container-Neuerstellung löscht diese externen Volumes nicht. Compose-Datei, Image-Referenz und Secrets liegen außerhalb der Datenvolumes.
 
-Die dedizierte Proxmox-VM, ein lokaler Reverse Proxy für LAN-Zugriff und der zusätzliche obligatorische SPDX-/Trivy-Gate vor jedem Deployment sind in [docs/proxmox-deployment.md](proxmox-deployment.md) beschrieben.
+Linux-Rechner, VM oder unprivilegierter Proxmox-LXC, ein lokaler Reverse Proxy für LAN-Zugriff und das obligatorische SPDX-/Trivy-Gate vor jedem Deployment sind in [docs/proxmox-deployment.md](proxmox-deployment.md) beschrieben. Niemals auf dem Proxmox-VE-Host installieren.
 
 ## Installation und Betrieb
+
+Hostwerkzeuge über den [einfachen Linux-Einstieg](../README.md#einfache-installation-unter-linux) installieren: `install-host-tools.sh` arbeitet als einzelne heruntergeladene Datei, installiert fehlende Abhängigkeiten nach Bestätigung und stellt `/opt/sporttracker` nur bei Fehlen bereit. `--check` bleibt ausschließlich lesend; erneute normale Ausführung verändert funktionierendes Docker nicht. `--upgrade` verlangt bei Docker/containerd-Ersatz manuelle Wartung und führt keine automatischen Dienst-/Container-Neustarts aus. Setup erzeugt keine produktiven Volumes/Secrets und deployt nichts. Erst anschließend die gesondert freizugebenden Schritte unten durchführen.
+
+Ubuntu/Debian Server und Desktop werden anhand tatsächlicher signierter Paketquellen und Laufzeitfunktionen geprüft, nicht anhand einer festen OS-Version. Ressourcenplanung: ca. 4 GiB RAM bieten mehr Reserve, 8 GiB sind kein hartes Minimum. LXC 116 mit 2 GiB RAM + 2 GiB Swap/4 vCPU/40 GB wird berücksichtigt; zusammen 2 GiB App-/DB-Speicherlimits plus Docker/OS/Trivy können trotzdem zu Engpässen führen. Bei OOM oder Scanfehlern Ressourcen/Last manuell klären, Sicherheitsprüfungen nicht abschalten. Keine automatischen LXC-/AppArmor-/Seccomp-/Firewalländerungen.
 
 ### Image-Veröffentlichung
 
@@ -18,7 +22,7 @@ Ein erfolgreicher Push auf `main` veröffentlicht das Image nach den bestehenden
 
 Der Actions-Run zeigt nach erfolgreichem Push den Registry-Digest, die Pull-Prüfung und die vollständige Referenz `ghcr.io/kruemelnerd/sporttracker@sha256:<digest>`. Für den späteren Compose-Betrieb `SPORTTRACKER_IMAGE=ghcr.io/kruemelnerd/sporttracker` und `SPORTTRACKER_IMAGE_DIGEST=sha256:<digest>` setzen; nicht `stable` als Produktionsreferenz verwenden. Das Package bleibt privat, bis seine Sichtbarkeit separat geprüft und freigegeben wird. Dieser Workflow deployt nicht auf Proxmox.
 
-Voraussetzungen: Linux-VM mit Bash und GNU coreutils (`realpath`, `stat`, `sha256sum`), Docker Engine mit Compose v2 (`docker compose`), ausreichend Speicher und ein gesicherter Hostzugang. PostgreSQL-Dump und Restore benötigen PostgreSQL-18-Clientwerkzeuge; die Skripte verwenden dafür den PostgreSQL-18-Container. Das FIT-Archiv benötigt GNU `tar`; Restore benötigt Python 3 zum sicheren Prüfen der Archivpfade.
+Voraussetzungen: unterstütztes Linux-Zielsystem mit Bash und GNU coreutils (`realpath`, `stat`, `sha256sum`), funktionsfähige Docker Engine mit Compose-Plugin (`docker compose`, auch kompatible neuere Hauptversionen), Buildx, containerd, GitHub CLI mit allen Verifier-Optionen, Trivy, ausreichend Speicher und gesicherter Adminzugang. PostgreSQL-Dump und Restore benötigen PostgreSQL-18-Clientwerkzeuge; die Skripte verwenden dafür den PostgreSQL-18-Container. Das FIT-Archiv benötigt GNU `tar`; Restore benötigt Python 3 zum sicheren Prüfen der Archivpfade.
 
 1. Vorhandene Volumes erst prüfen, dann nur fehlende Produktionsvolumes anlegen. Niemals ein vorhandenes Volume löschen oder ersetzen:
 
@@ -33,10 +37,10 @@ Voraussetzungen: Linux-VM mit Bash und GNU coreutils (`realpath`, `stat`, `sha25
 
 3. In einer geschützten Compose-Umgebungsdatei ausschließlich Pfade/Deploy-Konfiguration setzen (keine Passwortwerte), z. B. `POSTGRES_ADMIN_PASSWORD_FILE`, `POSTGRES_APP_PASSWORD_FILE`, `APP_DATABASE_URL_FILE`, `APP_DATABASE_USERNAME_FILE`, `APP_DATABASE_PASSWORD_FILE`, `SPORTTRACKER_IMAGE` und `SPORTTRACKER_IMAGE_DIGEST`. Image-Digest und Pfade vor dem Start verifizieren.
 
-4. Start und Stop:
+4. Start ausschließlich über den verifizierten Deployment-Prozess; vollständigen freigegebenen Digest einsetzen, niemals `stable`:
 
    ```bash
-   docker compose --env-file /secure/path/production.env -p sporttracker-prod -f compose.production.yaml up -d --wait
+   sudo bash scripts/deploy-verified.sh --env-file /secure/path/production.env --project sporttracker-prod 'ghcr.io/kruemelnerd/sporttracker@sha256:<freigegebener-64-stelliger-digest>'
    docker compose --env-file /secure/path/production.env -p sporttracker-prod -f compose.production.yaml ps
    docker compose --env-file /secure/path/production.env -p sporttracker-prod -f compose.production.yaml stop
    ```
@@ -94,7 +98,7 @@ Readiness, API-Antworten und das tatsächliche Lesen wiederhergestellter FIT-Ori
 ## Laufender Betrieb und Sicherheit
 
 - Logs ohne Secrets prüfen: `docker compose ... logs --since=15m app db`. Container-Health mit `docker compose ... ps` und `/api/health` bzw. `/api/ready` kontrollieren.
-- Neustart ohne Datenlöschung: `docker compose ... restart app` oder `docker compose ... up -d`. Bei Fehlern Ursache prüfen; keine Volume-/Datenbank-Reparatur automatisieren.
+- Reiner Neustart eines bereits verifizierten, persistent gespeicherten Digests ohne Konfigurations-/Imagewechsel: `docker compose ... restart app`. Jede Erstinstallation und jedes Image-Update ausschließlich über `scripts/deploy-verified.sh`; kein direktes `compose up` als alternativer Deploymentweg. Bei Fehlern Ursache prüfen; keine Volume-/Datenbank-Reparatur automatisieren.
 - Ressourcenlimits, Container-Logs und freien Platz auf Host/Volumes regelmäßig prüfen. Datenbank- und FIT-Volume wachsen unabhängig.
 - Image-Version: `docker compose ... images` und Container-Image-Digest via `docker inspect`; neue Images nur nach Backup, Release-Prüfung und geprüftem Restore-Pfad deployen. Der Deployment-Runner aktualisiert die gespeicherte Digest-Zeile atomar und bewahrt die vorige Compose-Umgebung auf, damit ein normaler Compose-Neustart nicht auf einen alten Digest zurückfällt.
 - Container laufen ohne Root (App UID 10001, PostgreSQL-Image-eigener Benutzer); App-Dateisysteme sind read-only, Capabilities reduziert, `no-new-privileges` aktiv. Secrets kommen als Dateien, nicht als Compose-Klartext-Umgebungswerte.
@@ -103,6 +107,8 @@ Readiness, API-Antworten und das tatsächliche Lesen wiederhergestellter FIT-Ori
 
 ## Regressionstest-Isolation
 
-Die vorhandene Backend- und Playwright-E2E-Infrastruktur verwendet fest `sporttracker-m4-e2e`, `running_dashboard_e2e` und Port `55432`; beide Testpfade leeren Anwendungstabellen. Zum Zeitpunkt dieser Dokumentation ist dieses Projekt bereits vorhanden. Diese Tests daher nicht gegen das vorhandene Projekt starten. Ein eigener Lauf erfordert eine separate Umsetzung, die Projektname, Port, Datenbankkennung und Testzugangsdaten durch Gradle-Testsetup, Compose und Playwright-Global-Setup konfigurierbar macht. Bis dahin Regressionstests nur nach nachweislich getrennter Infrastruktur ausführen.
+`./scripts/test-all.sh` erzeugt pro Lauf ein zufälliges `sporttracker-ci-<run-id>`-Projekt, eigene Datenbank/Benutzer, dynamische Loopback-Ports und ein eigenes Testvolume über `compose.test.yaml`. Vor jedem Reset werden Identität und Laufmarker geprüft; das Cleanup entfernt nur eindeutig diesem Lauf zugeordnete Ressourcen. Nicht direkt gegen `compose.yaml`, bestehende Produktivressourcen oder das alte `compose.e2e.yaml` testen. Backend/Playwright verlangen die konsistente `TEST_*`-Umgebung des Runners.
 
-Bekannte Einschränkung: Es gibt noch keine systemd-Automatisierung, Backup-Rotation, Offsite-Replikation, Verschlüsselung des Backup-Artefakts, konfigurierbare separate E2E-Testprojekte oder automatischen produktiven Cutover. Ein erfolgreicher Skript-Restore auf frische Ressourcen ersetzt nicht die regelmäßige Notfallübung.
+Die Installer-Tests sind Teil desselben CI-Testlaufs. Separat und ohne Docker-/APT-Änderungen: `python3 -m unittest discover -s tests/security -p 'test_install_host_tools.py'`. Sie simulieren Ubuntu/Debian, Erstinstallation und Wiederholung, prüfen negative Fälle und echte isolierte GPG-Signaturen. Das ist kein realer vollständiger VM-/LXC-Installationstest; insbesondere Proxmox-Hostprofile werden in CI nicht verändert oder als erfolgreich getestet ausgegeben.
+
+Bekannte Einschränkung: Es gibt noch keine systemd-Automatisierung für den Sporttracker, Backup-Rotation, Offsite-Replikation, Verschlüsselung des Backup-Artefakts oder automatischen produktiven Cutover. Ein erfolgreicher Skript-Restore auf frische Ressourcen ersetzt nicht die regelmäßige Notfallübung.

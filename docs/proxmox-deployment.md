@@ -1,14 +1,14 @@
-# Proxmox-Deployment vorbereiten
+# Verifiziertes Linux-/VM-/LXC-Deployment vorbereiten
 
-Die konkrete, phasenweise Erstinstallationsanleitung für Ubuntu Server 24.04 steht in [proxmox-first-install.md](proxmox-first-install.md). Dieses Dokument beschreibt ergänzend Betriebsgrenzen und Release-Sicherheit.
+Die konkrete, phasenweise Erstinstallation für Ubuntu/Debian steht in [proxmox-first-install.md](proxmox-first-install.md). Dieses Dokument beschreibt ergänzend Betriebsgrenzen und Release-Sicherheit. Der historische Dateiname bleibt zur Link-Kompatibilität erhalten.
 
-**Status: Vorbereitung; kein Proxmox- oder Produktiv-Deployment durchgeführt.** Diese Anleitung ist für eine dedizierte VM bestimmt. Sie setzt weder Container auf dem Proxmox-Host noch eingehenden Zugriff aus GitHub Actions voraus.
+**Status: Vorbereitung; kein Proxmox- oder Produktiv-Deployment durchgeführt.** Ziel ist ein normaler Linux-Rechner, eine VM oder ein unprivilegierter LXC-Gast, niemals der Proxmox-VE-Host selbst. Ältere Formulierungen „VM“ in den Betriebsschritten meinen entsprechend das Zielsystem; sie verlangen keine Neuerstellung einer vorhandenen Umgebung. Kein eingehender Zugriff aus GitHub Actions erforderlich.
 
 ## Architektur und Voraussetzungen
 
-- Dedizierte VM mit Ubuntu Server 24.04 LTS, aktuellen Sicherheitsupdates und Docker Engine aus dem offiziellen Docker-APT-Repository einschließlich Docker Compose Plugin.
-- Zielgröße 4 vCPU und 8 GiB RAM. App und PostgreSQL sind jeweils auf 1 GiB RAM und 1,5 CPU begrenzt; zusätzlich braucht der Host Reserven für Betriebssystem, Docker, Dateisystemcache und Scan-/Backup-Arbeiten.
-- Mindestens 40 GiB VM-System-/Docker-Speicher als Planungswert, nicht als Obergrenze. PostgreSQL- und FIT-Daten wachsen unabhängig davon; ihre Kapazität muss anhand des tatsächlichen Datenbestands geplant werden. Backupkopien gehören nicht ausschließlich auf die VM.
+- Ubuntu oder Debian (Server/Desktop), aktuelle Sicherheitsupdates und funktionale Docker Engine/CLI samt Compose/Buildx/containerd. Releases und Architekturen werden durch den Installer gegen signierte offizielle Paketquellen geprüft; keine Beschränkung auf Ubuntu 24.04. Das veröffentlichte Sporttracker-Image unterstützt aktuell nur `linux/amd64`.
+- Keine harte 8-GiB-Voraussetzung: 2–4 vCPU und ca. 4 GiB RAM bieten mehr Reserve; der vorhandene LXC 116 mit Ubuntu 26.04.1, 4 vCPU, 2 GiB RAM und 2 GiB Swap wird ausdrücklich berücksichtigt. App und PostgreSQL sind jeweils auf 1 GiB RAM und 1,5 CPU begrenzt; diese Obergrenzen zusammen lassen bei 2 GiB kaum Hostreserve. Trivy-Scans/Backups zusätzlich einplanen, bei Speicherfehlern stoppen statt Scans zu deaktivieren. Grenzen/Swap nicht automatisch ändern.
+- Ca. 40 GB System-/Docker-Speicher als Planungswert, nicht als starres Minimum oder Obergrenze. Setup blockiert unter 5 GiB freiem Platz und warnt unter 20 GiB; das ist keine Kapazitätszusage für beliebige Datenmengen. PostgreSQL- und FIT-Daten wachsen unabhängig; Backupkopien gehören nicht ausschließlich auf das Zielsystem.
 - Netzwerk: VM erhält eine private LAN-Adresse per bestehendem DHCP/DNS oder bewusst eingerichteter DHCP-Reservierung. Keine feste Adresse ist hier vorgegeben. Keine Router-Portweiterleitung und keine öffentliche Freigabe.
 - Auf der VM läuft ein lokaler Reverse Proxy (z. B. Caddy oder Nginx) als Hostdienst. Die App bleibt auf `127.0.0.1:8080` veröffentlicht; der Proxy leitet Anfragen intern an `http://127.0.0.1:8080` weiter. Der Proxy lauscht auf der privaten VM-Netzwerkschnittstelle. PostgreSQL bleibt ausschließlich im Compose-Netz und erhält keinen Host-Port.
 - Host-Firewall: eingehend standardmäßig sperren; nur erforderliche Admin-SSH-Zugriffe aus dem Admin-LAN und Proxy-Ports aus dem privaten LAN-CIDR erlauben. `<LAN-CIDR>` ist vor Ort zu ersetzen. Bei internem HTTPS nur TCP 443 (und optional 80 für Redirect/ACME-freie interne Nutzung) aus dem LAN erlauben. Keine Regeln auf Proxmox oder Router werden durch diese Anleitung gesetzt.
@@ -18,17 +18,17 @@ Der Reverse Proxy ist ein VM-Hostdienst und benötigt keinen zusätzlichen Conta
 
 ## Docker, Werkzeug und GHCR vorbereiten
 
-Docker Engine und Compose Plugin ausschließlich aus dem offiziellen Docker-Paket-Repository installieren (nicht das ungeprüfte Docker-Snap-Paket). Danach prüfen:
+Einheitlicher Installationsweg: das einzelne [`install-host-tools.sh`](../scripts/install-host-tools.sh) wie in der [README](../README.md#einfache-installation-unter-linux) herunterladen, vor Root-Ausführung prüfen und mit `sudo bash sporttracker-setup.sh` starten. Kein vorausgesetzter Git-Clone und keine parallelen manuellen Installer. Bereits funktionierendes Docker 29.9.2/Compose 5.6.1 im LXC bleibt im Standardmodus unverändert. Für eine erneute ausschließlich lesende Prüfung:
 
 ```bash
-docker --version
-docker compose version
-docker info
+bash sporttracker-setup.sh --check
 ```
 
-Zusätzlich werden Bash, GNU `stat`, `sha256sum`, `realpath`, `jq`, `curl` und ein aktuelles Trivy benötigt. Das verpflichtende `scripts/verify-release.sh` benötigt außerdem eine GitHub-CLI-Version mit `gh attestation verify` und dessen JSON-Ausgabe. Das Skript bricht bei fehlenden Werkzeugen oder nicht unterstützten CLI-Optionen ab. Trivy muss seine Vulnerability-Datenbank aktuell laden können; Offline-/DB-Fehler sind kein Anlass, den Scan zu überspringen.
+Der Installer verwaltet auch Bash-/GNU-Basiswerkzeuge, Python 3, Git, jq, curl, wget, CA-Zertifikate und GnuPG. Docker, GitHub CLI und Trivy stammen ausschließlich aus offiziellen signierten Hersteller-APT-Quellen mit eigenen geprüften Keyrings und `Signed-By`; Details/Fingerprints stehen im Erstinstallationsdokument. Der Check prüft alle von `verify-release.sh` benötigten Attestation-Flags einschließlich JSON und Ablehnung selbst gehosteter Runner. Ohne Docker-Socket-Rechte ist der Lauf nicht erfolgreich. Trivy muss später seine Vulnerability-Datenbank aktuell laden können; Offline-/DB-/OOM-Fehler sind kein Anlass, den Scan zu überspringen.
 
-Repository-Sichtbarkeit und GHCR-Package-Sichtbarkeit sind getrennt. Das Quellrepository ist öffentlich; ein anonymer Manifestabruf des freigegebenen Images wurde mit HTTP 401 (`authentication required`) beantwortet. Das Package erfordert damit derzeit Authentifizierung. Die Package-Sichtbarkeit wurde nicht verändert.
+`sudo bash sporttracker-setup.sh --upgrade` ist eine bewusste Werkzeugaktualisierung nach Bestätigung, kein OS-Release-Upgrade. Bei anstehendem Docker/containerd-Austausch wird manuelle Wartung verlangt, nicht automatisch ein Dienst neu gestartet. Setup verändert weder vorhandene Repositories noch SSH/UFW/LXC-/Proxmox-Sicherheitsprofile. Für LXC benötigte Hostvoraussetzungen nur manuell durch den Betreiber prüfen; niemals AppArmor/Seccomp pauschal abschalten oder auf privilegiert umstellen.
+
+Repository-Sichtbarkeit und GHCR-Package-Sichtbarkeit sind getrennt. Das Quellrepository ist öffentlich; bei einer früheren anonymen Manifestprüfung kam HTTP 401 (`authentication required`). Den tatsächlichen Digest-Zugriff daher am Ziel separat prüfen; keine aktuelle öffentliche Sichtbarkeit voraussetzen oder verändern. Setup fragt keine GHCR-Credentials ab und führt keine Anmeldung aus.
 
 Für Pull und Attestierungsprüfung einen dedizierten GitHub-Zugang mit minimalem `read:packages`-Lesezugriff verwenden. Kein `write:packages`, kein Organisations-Adminzugriff und keine langfristigen Runner-Credentials. Falls ein Classic PAT nötig ist, ausschließlich Scope `read:packages`, ein kurzes Ablaufdatum und regelmäßige Rotation verwenden; außerhalb des Repositories mit restriktiven Dateirechten verwahren und bei Verlust sofort widerrufen. Nie in Compose-Dateien, History, Logs oder Git ablegen. Login nur über stdin, z. B. `... | docker login ghcr.io --username USERNAME --password-stdin`. `gh auth status` darf keine Tokens ausgeben. Das öffentliche Repository benötigt für diese Anleitung keinen zusätzlichen Schreibzugriff.
 
@@ -79,7 +79,7 @@ Jede fehlgeschlagene Release-Verifikation endet, bevor Compose ausgeführt wird.
      ghcr.io/kruemelnerd/sporttracker@sha256:<64-stellige-hex-ID>
    ```
 
-   Platzhalter vor Ausführung ersetzen. Das Skript startet ausschließlich `compose.production.yaml`, führt keine Datenmigration/Restore von Entwicklungsdaten durch und verändert keine Volumes. Es ist in diesem Meilenstein ausschließlich mit isolierten Testressourcen bzw. Stubs getestet worden; der tatsächliche Produktionsstart bleibt offen. Ein positiver lokaler Nachweis-Test war hier nicht möglich: vorhandenes `gh` 2.46 unterstützt `gh attestation verify` nicht, und der vorhandene Login hat keinen `read:packages`-Scope. Der positive Attestierungsnachweis aus GitHub Actions ersetzt den späteren Verifier-Lauf auf der Ziel-VM nicht.
+   Platzhalter vor Ausführung ersetzen. Das Skript startet ausschließlich `compose.production.yaml`, führt keinen Restore von Entwicklungsdaten durch und erstellt/ersetzt keine externen Volumes. Der App-Start kann Flyway-Migrationen ausführen. Isolierte Tests und ein erfolgreicher Host-Setup-Lauf sind kein tatsächlicher Produktionsstart oder Release-Nachweis. Auch der positive Attestierungsnachweis aus GitHub Actions ersetzt den späteren Verifier-Lauf auf dem Zielsystem nicht.
 
 7. Bei Readiness-Fehlern erfolgt kein automatischer Container-Rollback, weil Flyway das Schema verändert haben kann. Manuelle Wiederherstellung aus verifiziertem Backup planen; keine Volumes löschen. Danach Proxy/Firewall aus dem LAN testen und `/api/ready` prüfen. Für Adressen wird nichts vorgegeben; DNS/DHCP ist vor Ort zu planen.
 
@@ -101,5 +101,5 @@ Backup-Timer, Rotation, verschlüsselte Offsite-Übertragung, Restore-Übungen u
 - Digest, Pull, GitHub-CLI, Signatur, Issuer/Workflow/Branch/Commit, SPDX-Dokument, Subject-Digest, Trivy oder Compose-Vorprüfung fehlerhaft: fail closed; keine Compose-Änderung durch `deploy-verified.sh`.
 - Volume fehlt oder Compose-Secrets/Env-Datei sind fehlerhaft: Start wird abgebrochen; Volumes/Secrets nicht automatisch anlegen oder reparieren.
 - Neue App wird nicht ready: kein automatischer Digest-Rollback. Stack/Volumes nicht löschen oder weiter verändern; Logs ohne Secrets sichern, Schema-/Migrationsstand prüfen und manuelle Wiederherstellung aus Backup planen.
-- GHCR ohne Authentifizierung: derzeit HTTP 401; Zugriffstoken mit nur erforderlichem Paket-Lesezugriff außerhalb des Repositories konfigurieren.
-- Noch offen für M8.3.2: Proxmox-VM tatsächlich erstellen, OS-/Docker-Paketstände festlegen, private LAN-Adresse/DNS und LAN-CIDR vor Ort ermitteln, Proxy/Firewall/CA konfigurieren, Secret- und Backupziele einrichten, reale GHCR-Zugangsdaten auf der VM sicher bereitstellen, Verifikation und Trivy-Scan auf der VM wiederholen, Backup samt externer Kopie und isoliertem Restore nachweisen und erst danach einen produktiven Start separat freigeben.
+- GHCR ohne Authentifizierung: falls der tatsächliche Digest-Pull HTTP 401 meldet, Zugriffstoken mit nur erforderlichem Paket-Lesezugriff außerhalb des Repositories konfigurieren. Setup erledigt dies ausdrücklich nicht.
+- Noch manuell erforderlich: das bestehende Zielsystem (beispielsweise LXC 116) prüfen, private LAN-Adresse/DNS und LAN-CIDR vor Ort ermitteln, Proxy/Firewall/CA separat konfigurieren, Secret- und Backupziele einrichten, falls nötig minimale GHCR-Leseberechtigung sicher bereitstellen, Verifikation und vollständigen Trivy-Scan am Ziel durchführen, Backup samt externer Kopie und isoliertem Restore nachweisen und erst danach einen produktiven Start separat freigeben. Keine Neuerstellung des funktionierenden LXC oder ungefragte Docker-Aktualisierung.

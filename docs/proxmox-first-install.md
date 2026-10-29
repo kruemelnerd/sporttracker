@@ -1,87 +1,83 @@
-# Proxmox: erste Installation vorbereiten
+# Linux, VM und Proxmox-LXC: erste Installation vorbereiten
 
-**Nur Vorbereitung.** Diese Anleitung führt keine Proxmox-Änderung und kein Deployment aus. Alle VM-Befehle führt der Benutzer selbst aus. Keine IP, DNS-Adresse oder LAN-CIDR ist vorgegeben. Bis zur ausdrücklichen Freigabe für Phase 4 werden keine Produktivcontainer gestartet und keine echten Trainingsdaten übernommen.
+**Setup ist kein Deployment.** Phase 1 installiert ausschließlich die Betriebswerkzeuge. Keine Proxmox-Host-Konfiguration, IP, DNS-Adresse oder LAN-CIDR wird automatisch verändert. Bis zur ausdrücklichen Freigabe für Phase 4 werden keine Produktivcontainer gestartet und keine echten Trainingsdaten übernommen.
 
 ## Ziel und Regeln
 
-- Dedizierte VM: Ubuntu Server 24.04 LTS, 4 vCPU, 8 GiB RAM, mindestens 40 GiB System-/Docker-Speicher. PostgreSQL/FIT- und Backup-Speicher separat einplanen.
-- LAN-only. PostgreSQL erhält keinen Host-Port; die App bleibt an `127.0.0.1:8080`. Reverse Proxy ist ein VM-Hostdienst.
-- Nur offizielle Ubuntu-, Docker-, GitHub CLI- und Aqua Security (Trivy)-Paketquellen. Keine `curl | bash`-Installer.
+- Ubuntu oder Debian, Server/Desktop, physischer Rechner, VM oder unprivilegierter Proxmox-LXC; aktuelle Unterstützung wird gegen offizielle signierte Paketquellen geprüft. Keine fest eingebaute Releaseversion. Derzeit veröffentlichtes Sporttracker-Image: nur `linux/amd64`.
+- Zielumgebung des Betreibers: Proxmox mit insgesamt 8 GB RAM, unprivilegierter LXC 116 mit Ubuntu 26.04.1, 2 GiB RAM + 2 GiB Swap, 4 vCPU, 40 GB, Nesting/Keyctl aktiviert. Docker 29.9.2/Compose 5.6.1, overlayfs und cgroups v2 funktionieren bereits und werden im normalen Setup nicht aktualisiert oder neu gestartet.
+- 8 GiB RAM sind **keine harte Mindestanforderung**. Für mehr Reserve sind ca. 4 GiB RAM, 2–4 vCPU und 40 GB ein sinnvoller Planungswert; Daten und externe Backups separat kalkulieren. Bei 2 GiB RAM können die bestehenden App-/DB-Limits zusammen bereits den gesamten RAM beanspruchen. Swap hilft gegen Lastspitzen, ersetzt aber keine Kapazitätsplanung. Trivy und seine Datenbanken benötigen zusätzliche Reserven; bei OOM/Scanfehlern stoppen, nie den Scan deaktivieren.
+- LAN-only. PostgreSQL erhält keinen Host-Port; die App bleibt an `127.0.0.1:8080`. Reverse Proxy ist ein Dienst im Zielsystem, nicht auf dem Proxmox-VE-Host.
+- Nur offizielle Ubuntu-/Debian-, Docker-, GitHub CLI- und Aqua Security (Trivy)-Paketquellen. Keine `curl | bash`-Installer.
 - Image immer per vollständigem SHA256-Digest bereitstellen und auf der VM erneut prüfen. CI-Erfolg allein reicht nicht.
 - Niemals vorhandene Volumes `sporttracker-prod-postgres` oder `sporttracker-prod-fit` löschen, ersetzen oder diagnostisch beschreiben.
 - Keine Secrets in Git, Shell-History, Prozessargumente, Tickets oder Logs übernehmen.
 
-## PHASE 1 – VM vorbereiten
+## PHASE 1 – Linux-Gast oder Rechner vorbereiten
 
 **Stoppunkt 1:** Erst fortfahren, wenn die Abnahmekriterien am Ende von Phase 1 geprüft und vom Betreiber bestätigt wurden.
 
-### A. VM in Proxmox manuell erstellen
+### A. Ziel und Adminzugang manuell prüfen
 
-1. Im Proxmox-Webinterface manuell eine neue, dedizierte VM anlegen; keine Änderungen am Proxmox-Host, Storage oder Netzwerk aus dieser Anleitung ableiten.
-2. Ubuntu Server 24.04 LTS ISO aus der offiziellen Ubuntu-Quelle beziehen und die veröffentlichte SHA256-Prüfsumme vergleichen.
-3. 4 vCPU, 8 GiB RAM und mindestens 40 GiB System-/Docker-Datenträger zuweisen; Storage für Daten und externe Backups nicht als Teil dieser Mindestgröße annehmen.
-4. Netzwerkkarte nur an das vorgesehene private LAN hängen. Keine Router-Portweiterleitung einrichten. VM-Name, Adresse, DNS und LAN-CIDR vor Ort bestimmen; hier nicht raten.
+Einen persönlichen Administrator und ein unterstütztes Ubuntu-/Debian-System bereitstellen. Installationsmedien nur offiziell beziehen und deren Prüfsummen/Signaturen unabhängig prüfen. Adressen, DNS und LAN-Zugriff vor Ort festlegen; keine Router-Portweiterleitung. Auf einem normalen Linux-PC ist keine Proxmox-Konfiguration nötig. Auf einem **Proxmox-VE-Host selbst niemals ausführen**; das Skript verweigert diesen Fall.
 
-### B. Ubuntu Server installieren
+Bei einem bestehenden LXC wie 116 nichts neu erstellen und nichts umprivilegieren. Falls Docker scheitert, Nesting/Keyctl und die konkreten Kernel-/cgroup-/AppArmor-/Seccomp-Meldungen am Proxmox-Host durch den Betreiber prüfen lassen. Keine pauschale Deaktivierung von Sicherheitsprofilen und keine automatischen Änderungen an LXC, Firewall oder Storage. Ein `-pve`-Kernel im LXC allein bedeutet nicht, dass das Skript auf dem Host läuft.
 
-1. Ubuntu Server 24.04 LTS installieren, verschlüsselten Datenträger verwenden, sofern das lokale Betriebs-/Recovery-Verfahren dies unterstützt.
-2. Einen persönlichen Administrator statt gemeinsam genutzter Konten anlegen. OpenSSH Server nur installieren, wenn SSH benötigt wird.
-3. Keine Anwendungsdaten oder Secrets auf dem Installationsmedium ablegen.
+OS-Sicherheitsupdates, SSH-Härtung und Firewalländerungen sind eigene geplante Wartungsarbeiten, nicht Teil des Installers. Vor Änderungen am Zugang immer eine zweite funktionierende Sitzung sicherstellen; der Installer ändert weder SSH noch UFW.
 
-### C. SSH und Betriebssystem absichern
+### B. Einzeldatei herunterladen, prüfen und installieren
 
 ```bash
-sudo apt update
-sudo apt full-upgrade
-sudo apt install --yes ca-certificates curl gnupg git jq openssh-client
-sudo reboot
+wget -O sporttracker-setup.sh https://raw.githubusercontent.com/kruemelnerd/sporttracker/main/scripts/install-host-tools.sh
+sudo bash sporttracker-setup.sh
 ```
 
-Nach dem Neustart SSH-Schlüsselzugang von einem zweiten Admin-Gerät testen, bevor Passwortzugriff deaktiviert wird. `PermitRootLogin no` und `PasswordAuthentication no` in einer Datei unter `/etc/ssh/sshd_config.d/` setzen; anschließend `sudo sshd -t` und `sudo systemctl reload ssh` ausführen. Den Zugang in einer zweiten Sitzung erneut prüfen.
-
-Firewall-Regeln erst nach Ermittlung des tatsächlichen Admin-Netzes planen. SSH nicht aussperren: zuerst nur den benötigten Admin-LAN-Zugriff erlauben, dann UFW aktivieren. Proxy-Ports kommen in Phase 3. Keine öffentlichen Regeln hinzufügen.
-
-### D. Docker Engine installieren
-
-Installationsweg nach der offiziellen [Docker-Anleitung für Ubuntu](https://docs.docker.com/engine/install/ubuntu/). Ubuntu-Codename/Architektur prüfen; den Docker-APT-Schlüssel aus `download.docker.com` in `/etc/apt/keyrings/docker.asc` speichern, dessen Fingerprint mit der aktuell von Docker veröffentlichten Angabe vergleichen und das APT-Repository gemäß offizieller Anleitung eintragen. Danach:
+**Vor `sudo bash` die Datei lesen.** `main` ist veränderlich. Optional eine geprüfte vollständige Commit-ID statt `main` verwenden und zusätzlich einen über einen unabhängigen vertrauenswürdigen Kanal erhaltenen SHA256-Wert vergleichen:
 
 ```bash
-sudo apt update
-apt-cache policy docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo apt install --yes docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo systemctl enable --now docker
-docker --version
-docker compose version
-sudo docker info
+printf '%s  %s\n' "$TRUSTED_SHA256" sporttracker-setup.sh | sha256sum --check --strict
 ```
 
-Keine Nutzer pauschal zur Gruppe `docker` hinzufügen (diese entspricht weitgehend Root-Zugriff). Für administrative Docker-Aufrufe `sudo docker` verwenden und die Kommandos der Anleitung entsprechend mit `sudo` ausführen.
+`TRUSTED_SHA256` muss vorher aus diesem unabhängigen Kanal bekannt sein; ein daneben heruntergeladener Hash allein beweist keine Authentizität. Keine fremden Installationsskripte mit `curl | bash` ausführen.
 
-### E. GitHub CLI installieren
+Der Installer zeigt Bestand und Paketplan und verlangt eine ausdrückliche Bestätigung. Er installiert nur fehlende/ungeeignete Werkzeuge, klont bei Fehlen `/opt/sporttracker` über HTTPS und verwendet für die gemeinsame Prüfung seine eigene geprüfte Logik. Skripte aus einem vorhandenen Repository werden nicht automatisch als Root ausgeführt. Ein vorhandenes Repository wird weder gelöscht noch gepullt, zurückgesetzt oder bereinigt; erforderliche Aktualisierungen nach Prüfung lokaler Änderungen bewusst manuell vornehmen.
 
-Offizielle [GitHub-CLI-APT-Anleitung](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) verwenden: GitHub-CLI-Schlüssel aus der offiziellen `cli.github.com`-Quelle laden, den veröffentlichten Fingerprint unabhängig vergleichen, Keyring und signiertes APT-Repository einrichten und `gh` aus APT installieren. Keine Installationspipeline ausführen.
+### C. Wiederholen, prüfen und aktualisieren
 
 ```bash
-gh --version
-gh attestation verify --help
+bash sporttracker-setup.sh --check
+sudo bash sporttracker-setup.sh --upgrade
 ```
 
-Die benötigten Flags `--signer-workflow`, `--source-ref`, `--source-digest`, `--cert-oidc-issuer`, `--predicate-type` und `--format` müssen unterstützt werden. Keine Authentifizierung auf gemeinsam genutzten Terminals durchführen.
+`--check` ist ausschließlich lesend, einschließlich Paketquellenprüfung: kein APT-Update, keine Cache-/Keyring-Dateien, kein Clone und kein Containerstart. Fehlende Werkzeuge oder Docker-Socket-Rechte sind Fehler, keine Erfolgsmeldung. Für die Docker-Prüfung gegebenenfalls bewusst `sudo bash sporttracker-setup.sh --check` verwenden; keine gewöhnlichen Benutzer zur Docker-Gruppe hinzufügen.
 
-### F. Trivy installieren
+Bei vorhandenen, aber inaktiven systemd-Diensten für Docker/containerd wird kein Socket kontaktiert: selbst `docker info` könnte sonst über Socket-Aktivierung den Dienst und dessen alte Container starten. Docker-Snap wird anhand lokaler Dateien erkannt, ohne dafür snapd zu aktivieren.
 
-Trivy über die offizielle [Aqua Security APT-Repository-Anleitung](https://aquasecurity.github.io/trivy/latest/getting-started/installation/) einrichten. Schlüssel/Fingerprint und Repository wie dort dokumentiert prüfen; keine Installer-Skripte verwenden. Danach `trivy --version` ausführen. Der spätere Scan muss eine aktuelle Vulnerability-Datenbank laden können.
+Der normale erneute Aufruf erhält funktionierende Versionen, auch neuere Hauptversionen wie Compose 5. `--upgrade` aktualisiert nur verwaltete Werkzeuge, niemals das OS-Release. Sobald Docker/containerd ersetzt werden müsste, bricht es mit Wartungshinweis ab; auch ohne laufende Container wäre ein Dienstneustart durch Paketskripte nicht ausgeschlossen. Keine automatische Deinstallation von `docker.io`, Docker Desktop/Snap oder Podman-Konfliktpaketen.
 
-### G. Repository bereitstellen
+Docker selbst richtet bei der Erstinstallation Netzwerk-/Firewallregeln ein; veröffentlichte Ports können UFW umgehen. Der Installer öffnet keine Sporttracker-Ports und startet keinen Smoke-/Produktivcontainer.
+
+### D. Paketquellen und Vertrauensanker
+
+- Ubuntu/Debian: offizielle Distributionsarchive einschließlich Security/Updates, mit vorhandenem Distributions-Keyring. Bestehende HTTP-Standardquellen werden nicht umgeschrieben; Setup nutzt eigene temporäre HTTPS-Quellen für seine Transaktion.
+- Docker: `https://download.docker.com/linux/ubuntu` bzw. `/debian`, tatsächlicher Codename, Komponente `stable`. Primary-Fingerprint `9DC858229FC7DD38854AE2D88D81803C0EBFCD88`, dokumentiert in der [offiziellen Docker-Dokumentationshistorie](https://github.com/docker/docker.github.io/issues/3457); aktuelle [Ubuntu-](https://docs.docker.com/engine/install/ubuntu/) und [Debian-Anleitung](https://docs.docker.com/engine/install/debian/).
+- GitHub CLI: `https://cli.github.com/packages`, `stable main`. Erlaubte Primary-Fingerprints `2C6106201985B60E6C7AC87323F3D4EA75716059` und `7F38BBB59D064DBCB3D84D725612B36462313325` laut [offizieller Installationsdokumentation](https://github.com/cli/cli/blob/trunk/docs/install_linux.md). Der Keyring enthält auch den alten, inzwischen abgelaufenen Schlüssel; gültige Repository-Signaturen bleiben Pflicht.
+- Trivy: `https://aquasecurity.github.io/trivy-repo/deb`, `generic main`; offizieller Nachfolger/Alias `https://get.trivy.dev/deb`. Ausschließlich neuer Primary-Fingerprint `825AD9036F7C850E6A6FED4935B8ACA44FD9CA9F` gemäß [Hersteller-Mitteilung zur Rotation vom April 2026](https://github.com/aquasecurity/trivy/discussions/10549), nicht der ersetzte Vorgänger.
+
+Versionen kommen dynamisch aus signierten stabilen Paketquellen. Fingerprints sind bewusst feste Vertrauensanker, keine Versionspins: unbekannte Schlüsselrotation blockiert, bis sie unabhängig geprüft und im Installer gepflegt wurde. Eigene Keyrings mit `Signed-By`; Download-, Signatur-, Hash- oder APT-Fehler brechen ab. Vorhandene `.list`/Deb822-Quellen werden erkannt, nicht unkontrolliert überschrieben. Keine fremden PPAs in Setup-Transaktionen. Bestehende Docker-Pakete und nicht angeforderte installierte Abhängigkeiten werden zusätzlich gegen indirekte Upgrades geschützt.
+
+Auch ein vorhandener Keyring muss die aktuelle Repository-Signatur verifizieren können. Unvollständiger dpkg-Zustand, zurückgebliebene Docker-Daten ohne CLI oder widersprüchliche Quellen verlangen manuelle Wartung statt automatischer Reparatur. Setup-Transaktionen laden bewusst keine geerbten APT-Hooks, Zugangsdaten oder unsicheren TLS-Sonderregeln. Für HTTPS muss bereits ein vertrauenswürdiger CA-Speicher nutzbar sein; ohne jeden CA-Vertrauensanker ist ein sicherer automatischer Download nicht möglich. Dann CA-Vertrauen zuerst über vertrauenswürdige Distributionsmedien herstellen, niemals Zertifikatsprüfungen abschalten.
+
+GitHub CLI muss sämtliche Verifier-Flags einschließlich `--deny-self-hosted-runners` und JSON unterstützen. Ein erfolgreiches `trivy --version` ist **kein** erfolgreicher Image-Scan. Für Release-Freigabe bleibt der vollständige Scan in Phase 2 verpflichtend.
+
+### G. Betriebsrepository prüfen
 
 ```bash
-git clone https://github.com/kruemelnerd/sporttracker.git
-cd sporttracker
-git status --short --branch
-git rev-parse origin/main
+cd /opt/sporttracker
+sudo bash scripts/proxmox-preflight.sh
 ```
 
-Vor dem Betrieb Branch/Commit mit dem freigegebenen Release abgleichen. Das Repository enthält keine Credentials. Dateien `compose.production.yaml`, `scripts/`, `docker/postgres/` und `docs/` nicht lokal durch Entwicklungsvarianten ersetzen.
+Der historische Preflight-Name bleibt für bestehende Aufrufe erhalten; er nutzt denselben ausschließlich lesenden Check des Installers. Vor dem späteren Betrieb Branch/Commit mit dem freigegebenen Release abgleichen. Dateien `compose.production.yaml`, `scripts/`, `docker/postgres/` und `docs/` nicht durch Entwicklungsvarianten ersetzen.
 
 ### H. GHCR-Zugriff prüfen
 
@@ -99,7 +95,7 @@ unset GHCR_TOKEN
 
 `GITHUB_USERNAME` ist durch das Paket-Konto zu ersetzen. Niemals den Tokenwert in eine Datei im Repository schreiben oder `set -x` aktivieren. Docker speichert Login-Material standardmäßig in der Benutzerkonfiguration; auf einer produktiven VM dafür einen geschützten Credential Helper bzw. den freigegebenen lokalen Secret-Speicher verwenden. Nur das Vorhandensein von `gh auth status` ist kein Beweis für Package-Leserechte.
 
-**Stoppunkt 1 – Abnahme Phase 1:** Ubuntu 24.04 und Architektur stimmen; Updates sind eingespielt; Adminzugriff ist getestet; Docker Engine/Compose, `gh`, Trivy, Git und jq sind vorhanden; freier Speicher reicht; GitHub/GHCR sind erreichbar; kein Produktivvolume wurde erstellt oder verändert. Ergebnisse prüfen, bevor Phase 2 beginnt.
+**Stoppunkt 1 – Abnahme Phase 1:** Ubuntu/Debian und Architektur werden von signierten offiziellen Quellen unterstützt; Adminzugriff ist getestet; Docker Engine/CLI, Compose, Buildx, containerd, `gh` mit allen Verifier-Optionen, Trivy und Basiswerkzeuge sind funktionsfähig; Speicher-/LXC-Warnungen sind betrieblich geklärt; tatsächlichen GitHub/GHCR-Zugriff separat prüfen. Kein Produktivvolume wurde erstellt oder verändert, kein Release als verifiziert gemeldet. Erst danach Phase 2.
 
 ## PHASE 2 – Image-Verifikation
 
@@ -167,7 +163,7 @@ Kein Passwort als Env-Wert. Die Deployment-Datei bewahrt vor Digest-Änderung di
 
 ### L. Netzwerk und Reverse Proxy vorbereiten
 
-Einen Host-Reverse-Proxy aus einer offiziellen Ubuntu-Paketquelle installieren (z. B. Nginx). Vor Ort eine tatsächlich gültige private VM-Adresse, DNS-Namen und LAN-CIDR ermitteln; keine Platzhalterwerte produktiv übernehmen. Proxy nur an die vorgesehene LAN-Schnittstelle binden und upstream ausschließlich `http://127.0.0.1:8080` verwenden. Keine Weiterleitung für PostgreSQL.
+Einen Reverse Proxy im Zielsystem aus einer offiziellen Ubuntu-/Debian-Paketquelle installieren (z. B. Nginx), als separaten bewussten Betriebsschritt. Vor Ort eine tatsächlich gültige private Adresse, DNS-Namen und LAN-CIDR ermitteln; keine Platzhalterwerte produktiv übernehmen. Proxy nur an die vorgesehene LAN-Schnittstelle binden und upstream ausschließlich `http://127.0.0.1:8080` verwenden. Keine Weiterleitung für PostgreSQL und kein Dienst auf dem Proxmox-VE-Host.
 
 UFW: SSH nur aus dem Admin-LAN; erforderliche Proxy-Ports (normalerweise TCP 443, optional 80) nur aus dem privaten Client-LAN erlauben; eingehend sonst standardmäßig sperren. Regeln vor `ufw enable` prüfen und zweiten SSH-Zugang offen halten. Keine Proxmox-Firewall-, Router- oder Portforwarding-Änderung durch diese Anleitung. TLS nur dann als sicher ausweisen, wenn Clients der internen CA vertrauen; deren Schlüssel/Zertifikate separat schützen.
 
@@ -225,9 +221,9 @@ sudo ./scripts/backup.sh \
 
 Restore ausschließlich nach `docs/containerization.md` mit `scripts/restore.sh` in ein neues, leeres, isoliertes Compose-Projekt. Vor App-Start Hashes, Aktivitäts-/Trainingsdatensätze und Flyway-Stand vergleichen. Restore-Fehlerressourcen bleiben zur Untersuchung erhalten. Kein Restore in `sporttracker-prod-postgres` oder `sporttracker-prod-fit`.
 
-## Lokal vorbereiteter VM-Preflight
+## Gemeinsamer Linux-/VM-/LXC-Preflight
 
-Vor Phase 2 auf der VM, aus dem Repository, ohne `sudo` falls Docker-Berechtigungen reichen:
+Vor Phase 2 auf dem Zielsystem, aus dem Repository, ohne `sudo` falls Docker- und Repository-Berechtigungen reichen:
 
 ```bash
 ./scripts/proxmox-preflight.sh

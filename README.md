@@ -2,7 +2,32 @@
 
 Lokale Webanwendung zur Verwaltung und Auswertung eigener Lauftrainings aus Garmin-/FIT-Dateien.
 
-## Voraussetzungen
+### Einfache Installation unter Linux
+
+Für den **Containerbetrieb** auf Ubuntu oder Debian (Server/Desktop, normaler Linux-PC, VM oder unprivilegierter Proxmox-LXC):
+
+**Vor der Root-Ausführung die heruntergeladene Datei lesen.** Die URL lädt den veränderlichen Hauptbranch, keine unveränderliche signierte Veröffentlichung. Für zusätzliche Integrität einen unabhängig vertrauenswürdig erhaltenen SHA256-Wert vergleichen oder eine zuvor geprüfte vollständige Commit-ID statt `main` in der URL verwenden. Ein Hash von derselben Downloadquelle allein schützt nicht vor deren Manipulation.
+
+```bash
+wget -O sporttracker-setup.sh https://raw.githubusercontent.com/kruemelnerd/sporttracker/main/scripts/install-host-tools.sh
+sudo bash sporttracker-setup.sh
+```
+
+Das einzelne Skript benötigt keinen vorherigen Git-Clone. Nach einer Bestandsaufnahme und ausdrücklicher Bestätigung installiert es fehlende Systemwerkzeuge, Docker Engine/CLI, containerd, Compose und Buildx sowie GitHub CLI und Trivy aus offiziellen signierten HTTPS-Paketquellen. `/opt/sporttracker` wird nur bei Fehlen geklont; bestehende Repositories und lokale Änderungen werden nicht aktualisiert oder überschrieben. Ein Proxmox-VE-Host wird ausdrücklich abgelehnt. Betriebssystemversion und Architektur werden gegen echte signierte Paketmetadaten geprüft, nicht gegen eine fest eingebaute Versionsliste.
+
+```bash
+bash sporttracker-setup.sh --check          # ausschließlich lesend, keine Installation
+sudo bash sporttracker-setup.sh --upgrade  # bewusste Werkzeugupdates nach Bestätigung
+bash sporttracker-setup.sh --help
+```
+
+Erneute normale Ausführung erhält funktionierende Installationen, insbesondere Docker. `--upgrade` führt kein OS-Release-Upgrade aus und verlangt bei einem anstehenden Docker-/containerd-Austausch manuelle Wartung statt eines automatischen Daemon-/Container-Neustarts. Paketkonflikte werden nicht automatisch deinstalliert. Ohne Docker-Socket-Berechtigung kann `--check` den Daemon nicht prüfen und meldet einen Fehler; das Skript fügt niemanden zur Docker-Gruppe hinzu.
+
+**Setup ist kein Deployment:** keine produktiven Volumes, Datenbankinitialisierung, Secrets, GHCR-Anmeldung oder Containerstarts. Release-Verifikation einschließlich vollständigem Trivy-Scan und anschließend `scripts/deploy-verified.sh` bleiben Pflicht. Derzeit wird das Sporttracker-Image nur für `linux/amd64` veröffentlicht; Werkzeuginstallation auf einer anderen unterstützten Architektur ist keine Image-Freigabe. Java/Node sind für diesen Betriebsweg nicht nötig.
+
+Auch kleine Systeme wie LXC mit 2 GiB RAM + 2 GiB Swap, 4 vCPU und 40 GB werden berücksichtigt; Ressourcenwarnungen und mögliche Trivy-Speicherengpässe dürfen niemals zum Überspringen von Sicherheitsprüfungen führen. Details und die weiteren Freigabeschritte: [Linux-Erstinstallation](docs/proxmox-first-install.md).
+
+## Voraussetzungen für die lokale Entwicklung
 
 - Java 25
 - Node.js 22.12 oder neuer und npm
@@ -46,7 +71,7 @@ Mit `Ctrl-C` werden Backend und Frontend beendet; PostgreSQL bleibt gestartet un
 
 ## Containerbetrieb
 
-Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie Backup und Restore siehe [docs/containerization.md](docs/containerization.md). Die schrittweise Ubuntu-24.04-Erstinstallation ist in [docs/proxmox-first-install.md](docs/proxmox-first-install.md) beschrieben; [docs/proxmox-deployment.md](docs/proxmox-deployment.md) ergänzt Architektur und verifizierten Deployment-Ablauf. Der lokale Entwicklungsstart über `./dev.sh` bleibt davon unabhängig.
+Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie Backup und Restore siehe [docs/containerization.md](docs/containerization.md). Die schrittweise Linux-/VM-/LXC-Erstinstallation ist in [docs/proxmox-first-install.md](docs/proxmox-first-install.md) beschrieben; [docs/proxmox-deployment.md](docs/proxmox-deployment.md) ergänzt Architektur und verifizierten Deployment-Ablauf. Der lokale Entwicklungsstart über `./dev.sh` bleibt davon unabhängig.
 
 ## Intervals.icu
 
