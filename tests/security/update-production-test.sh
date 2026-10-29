@@ -17,9 +17,9 @@ printf '%s\n' "$*" >> "$CALL_LOG"
 case "$*" in
   'context inspect default --format {{.Endpoints.docker.Host}}') echo 'unix:///var/run/docker.sock' ;;
   *' ps -q app') echo 'fixture-app' ;;
-  'inspect -f {{.State.Status}} fixture-app') echo 'running' ;;
-  'inspect -f {{.State.Health.Status}} fixture-app') echo 'healthy' ;;
-  'inspect -f {{.Config.Image}} fixture-app') printf 'ghcr.io/kruemelnerd/sporttracker@sha256:%064d\n' 0 ;;
+  *' inspect -f {{.State.Status}} fixture-app') echo 'running' ;;
+  *' inspect -f {{.State.Health.Status}} fixture-app') echo 'healthy' ;;
+  *' inspect -f {{.Config.Image}} fixture-app') printf 'ghcr.io/kruemelnerd/sporttracker@sha256:%064d\n' 0 ;;
   *) exit 0 ;;
 esac
 SH
