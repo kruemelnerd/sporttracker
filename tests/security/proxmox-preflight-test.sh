@@ -4,15 +4,29 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
-mkdir "$tmp/empty-path"
-printf 'ID=debian\nVERSION_ID=12\n' >"$tmp/os-release"
-if output=$(PATH="$tmp/empty-path" OS_RELEASE_FILE="$tmp/os-release" /bin/bash "$root/scripts/proxmox-preflight.sh" 2>&1); then
-  echo 'Preflight accepted an unsupported operating system' >&2
-  exit 1
-fi
-[[ $output == *'FAIL: Ubuntu Server 24.04'* && $output == *'No resources were changed.'* ]] || {
-  echo 'Preflight did not clearly reject unsupported prerequisites' >&2
-  printf '%s\n' "$output" >&2
+mkdir "$tmp/bin"
+ln -s /bin/bash "$tmp/bin/bash"
+ln -s /usr/bin/dirname "$tmp/bin/dirname"
+cp "$root/scripts/proxmox-preflight.sh" "$tmp/proxmox-preflight.sh"
+cat >"$tmp/install-host-tools.sh" <<'STUB'
+#!/usr/bin/env bash
+[[ $# == 1 && $1 == --check ]] || exit 90
+echo 'READ_ONLY_SHARED_CHECK'
+exit 23
+STUB
+status=0
+output=$(PATH="$tmp/bin" "$tmp/proxmox-preflight.sh" 2>&1) || status=$?
+[[ $status == 23 && $output == READ_ONLY_SHARED_CHECK ]] || {
+  echo 'Preflight must delegate to the shared read-only check and preserve its exit status.' >&2
   exit 1
 }
-echo 'Preflight rejected unsupported OS with missing tools and made no resource changes.'
+if PATH="$tmp/bin" "$tmp/proxmox-preflight.sh" --upgrade >/dev/null 2>&1; then
+  echo 'Preflight accepted a mutating mode.' >&2
+  exit 1
+fi
+rm "$tmp/install-host-tools.sh"
+if PATH="$tmp/bin" "$tmp/proxmox-preflight.sh" >/dev/null 2>&1; then
+  echo 'Preflight accepted a missing shared installer.' >&2
+  exit 1
+fi
+echo 'Preflight delegates only --check, preserves failures, and refuses missing shared code.'

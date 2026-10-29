@@ -19,7 +19,7 @@ for name in TEST_DATABASE_URL TEST_DATABASE_NAME TEST_DATABASE_USERNAME TEST_DAT
   fi
 done
 
-for command in docker git java jq node npm openssl; do
+for command in docker git java jq node npm openssl python3; do
   command -v "$command" >/dev/null || { echo "Required command not found: $command" >&2; exit 2; }
 done
 docker compose version >/dev/null
@@ -136,7 +136,8 @@ verify_reset_guard() {
 }
 
 run_release_security_tests() {
-  "$ROOT_DIR/tests/security/verify-release-test.sh" &&
+  python3 -m unittest discover -s "$ROOT_DIR/tests/security" -p 'test_install_host_tools.py' &&
+    "$ROOT_DIR/tests/security/verify-release-test.sh" &&
     "$ROOT_DIR/tests/security/verify-release-policy-test.sh" &&
     "$ROOT_DIR/tests/security/deploy-verified-test.sh" &&
     "$ROOT_DIR/tests/security/proxmox-preflight-test.sh"
