@@ -18,7 +18,10 @@ RUN --mount=type=cache,target=/root/.gradle/caches \
 
 FROM eclipse-temurin:25-jre-noble@sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5 AS runtime
 WORKDIR /app
-RUN groupadd --system --gid 10001 app && \
+RUN apt-get update && \
+    apt-get install --only-upgrade --yes --no-install-recommends libbrotli1 && \
+    rm -rf /var/lib/apt/lists/* && \
+    groupadd --system --gid 10001 app && \
     useradd --system --uid 10001 --gid 10001 --no-create-home app && \
     mkdir /data && chown 10001:10001 /data
 COPY --from=backend --chown=10001:10001 /workspace/backend/build/libs/running-dashboard-backend-0.1.0-SNAPSHOT.jar /app/app.jar
