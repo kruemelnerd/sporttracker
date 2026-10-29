@@ -27,6 +27,28 @@ Erneute normale Ausführung erhält funktionierende Installationen, insbesondere
 
 Auch kleine Systeme wie LXC mit 2 GiB RAM + 2 GiB Swap, 4 vCPU und 40 GB werden berücksichtigt; Ressourcenwarnungen und mögliche Trivy-Speicherengpässe dürfen niemals zum Überspringen von Sicherheitsprüfungen führen. Details und die weiteren Freigabeschritte: [Linux-Erstinstallation](docs/proxmox-first-install.md).
 
+## Manuelles Produktionsupdate mit Pflicht-Backup
+
+Bei laufender Produktion erfolgt ein Versionswechsel ausschließlich nach erfolgreicher lokaler Sicherung der PostgreSQL-Datenbank und der FIT-Dateien. Das Script `scripts/update-production.sh` prüft die aktuell laufende, gesunde Version und erzeugt über `scripts/backup.sh` ein neues Backup. **Erst nach dessen erfolgreicher Prüfung** wird das bereits vorhandene `scripts/deploy-verified.sh` aufgerufen. Bei Backupfehlern findet kein Deployment statt. Releases müssen weiterhin aus erfolgreichem GitHub Actions und mit vollständigem SHA256-Digest stammen.
+
+Auf dem bereits eingerichteten Sporttracker-LXC mit dem produktiven Compose-Projekt:
+
+```bash
+cd /opt/sporttracker
+git status --short
+git pull --ff-only
+
+bash scripts/update-production.sh \
+  --env-file /etc/sporttracker/production.env \
+  --project sporttracker-prod \
+  --backup-dir /var/backups/sporttracker \
+  'ghcr.io/kruemelnerd/sporttracker@sha256:<NEUER_64_STELLIGER_DIGEST>'
+```
+
+Das Backup-Verzeichnis muss vorher erstellt sein und nur dem ausführenden Benutzer zugänglich sein (`install -d -m 700 /var/backups/sporttracker`). Die laufende Anwendung wird während des Backups kurz gestoppt und danach wieder gestartet. Bei gleichem **laufendem und konfiguriertem** Digest wird weder ein Backup noch ein Deployment ausgeführt. Parallel laufende Aufrufe dieses Wrappers werden gesperrt. Die Backups liegen weiterhin **nur lokal**, werden **nicht automatisch periodisch erstellt** und **nicht rotiert**; Restore-Test und externe Kopien bleiben empfohlen. Eine Flyway-Migration lässt sich nicht durch einen simplen Container-Rollback rückgängig machen. Das Backup-Skript und die Deploy-Skripte dürfen bei manuellen Updates nicht umgangen werden.
+
+Isolierte Wrapper-Tests (ohne Docker-Zugriff): `bash tests/security/update-production-test.sh`.
+
 ## Voraussetzungen für die lokale Entwicklung
 
 - Java 25
