@@ -96,6 +96,27 @@ docker compose down -v  # löscht den benannten PostgreSQL-Datenträger unwiderr
 
 Der Datenbestand liegt im benannten Volume `running-dashboard-postgres` und bleibt bei `stop`/`down` erhalten.
 
+## Abhängigkeitsupdates mit Renovate
+
+`renovate.json` überwacht Gradle samt Wrapper, npm samt `package-lock.json`, Docker-Images in Dockerfiles/Compose-Dateien und GitHub Actions. Reguläre Update-PRs entstehen montags zwischen 00:00 und 03:59 Uhr in `Europe/Berlin`; Sicherheitsupdates dürfen unabhängig davon zeitnah einen PR erzeugen. Es gibt höchstens vier reguläre und einen Sicherheits-PR gleichzeitig sowie maximal zwei reguläre neue PRs pro Stunde.
+
+Kompatible Non-Major-Updates werden getrennt für Gradle, Frontend-Laufzeit-, Frontend-Entwicklungs-, Docker-Build- und GitHub-Actions-Abhängigkeiten gruppiert. Majors bleiben einzeln. PostgreSQL bleibt auf Major 18 beschränkt und erhält eigene Minor-, Patch- oder Digest-PRs; ein PostgreSQL-Major-Upgrade erfordert separat eine Migrations- und Backupplanung. Docker- und Actions-Pins bleiben unveränderlich: Docker-Updates behalten `@sha256`, GitHub Actions vollständige Commit-SHAs mit Versionskommentar. Die variable produktive Sporttracker-Image-Referenz verwaltet Renovate nicht.
+
+Die gehostete Renovate-GitHub-App ist durch diese Änderung **nicht** installiert. Ein Repository-Administrator installiert die offizielle App in GitHub mit **Only select repositories** und wählt ausschließlich `kruemelnerd/sporttracker`; zusätzliche Tokens oder Secrets sind nicht nötig. Bei einer Auswahlinstallation kann GitHub einen Onboarding-PR anlegen. Diesen nur mergen, wenn er die vorhandene `renovate.json` nicht abschwächt oder ersetzt; andernfalls den PR schließen und die Konfiguration unverändert lassen.
+
+Das Dependency Dashboard ist ein GitHub-Issue und zeigt ausstehende, begrenzte oder ignorierte Updates. Für jeden Renovate-PR: Diff, Release Notes und Kompatibilität prüfen, bei npm die aktualisierte Sperrdatei kontrollieren und alle bestehenden CI-Checks einschließlich Tests, Trivy, Gitleaks und Workflow-Prüfungen abwarten. Keine PRs werden automatisch gemergt. Nach einem manuellen Merge nach `main` baut, scannt, attestiert und veröffentlicht die bestehende CI ein GHCR-Image; sie deployt es nicht.
+
+Für ein manuelles Update auf dem Proxmox-LXC zuerst ein aktuelles, geprüftes Backup gemäß [Deployment-Dokumentation](docs/proxmox-deployment.md) erstellen. Danach den in der CI-Zusammenfassung ausgewiesenen vollständigen Deployment-Digest (nie `stable`) auf dem Zielsystem mit dem bestehenden Verifier ausrollen:
+
+```bash
+scripts/deploy-verified.sh \
+  --env-file /secure/path/production.env \
+  --project sporttracker-prod \
+  ghcr.io/kruemelnerd/sporttracker@sha256:<64-stellige-hex-ID>
+```
+
+Der Ablauf validiert Attestierungen, führt einen Trivy-Scan aus und aktualisiert erst danach den App-Service; er umgeht weder Backups noch die bestehenden Deployment-Schutzmaßnahmen.
+
 ## Tests
 
 ```bash
