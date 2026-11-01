@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
-FROM node:24-bookworm@sha256:7b559cf7f77d837192392499a850abb1a3d1f49fbc2bd0692d54b212c9e38f6d AS frontend
+FROM node:24-bookworm@sha256:e7add2a490bb17d97b485b8641bd88455fff7839ade0f5eba493c3508124d413 AS frontend
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM eclipse-temurin:25-jdk-noble@sha256:ba0f0e1a33864105e1d454e88105c617ab40f71062db1f306bf58be32a3f8e5e AS backend
+FROM eclipse-temurin:25-jdk-noble@sha256:95e350ad1eb738f943e141640f7e3d797e483359a3b33c3864255bfd1ad71f8a AS backend
 WORKDIR /workspace
 COPY . ./
 COPY --from=frontend /frontend/dist /frontend-build
@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/root/.gradle/caches \
     ./gradlew --no-daemon --max-workers=2 -PfrontendBuildOutput=/frontend-build bootJar && \
     mkdir -p /healthcheck && javac -d /healthcheck /workspace/docker/healthcheck/Healthcheck.java
 
-FROM eclipse-temurin:25-jre-noble@sha256:3f2223fe04b750aa5a8179e29b5c9a1ddf7665fc9bb08bfe11ad01d143bc13a5 AS runtime
+FROM eclipse-temurin:25-jre-noble@sha256:a98128a57de944a72bd31fbc79b898edd5a5864d3652071d5bbd2160ab7d7dce AS runtime
 WORKDIR /app
 RUN apt-get update && \
     apt-get install --only-upgrade --yes --no-install-recommends libbrotli1 && \
