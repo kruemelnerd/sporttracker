@@ -1,0 +1,83 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    "helpers:pinGitHubActionDigests"
+  ],
+  "timezone": "Europe/Berlin",
+  "schedule": ["* 0-3 * * 1"],
+  "updateNotScheduled": false,
+  "dependencyDashboard": true,
+  "automerge": false,
+  "platformAutomerge": false,
+  "prConcurrentLimit": 4,
+  "prHourlyLimit": 2,
+  "separateMajorMinor": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "schedule": [],
+    "prConcurrentLimit": 1,
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "description": "Never merge dependency updates automatically.",
+      "matchPackageNames": ["*"],
+      "automerge": false
+    },
+    {
+      "description": "Keep PostgreSQL on major version 18; major upgrades need a planned database migration.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["postgres"],
+      "allowedVersions": "/^18(?:\\.|-|$)/",
+      "groupName": "PostgreSQL 18 image updates"
+    },
+    {
+      "description": "Update the Gradle wrapper independently of application dependencies.",
+      "matchManagers": ["gradle-wrapper"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Gradle wrapper"
+    },
+    {
+      "description": "Group compatible non-major Gradle dependency updates.",
+      "matchManagers": ["gradle"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Gradle dependencies (non-major)"
+    },
+    {
+      "description": "Group compatible non-major frontend runtime updates.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["dependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Frontend runtime dependencies (non-major)"
+    },
+    {
+      "description": "Group compatible non-major frontend development-tool updates.",
+      "matchManagers": ["npm"],
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Frontend development dependencies (non-major)"
+    },
+    {
+      "description": "Keep Docker build-image digest updates together without changing major image lines.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["node", "eclipse-temurin"],
+      "matchUpdateTypes": ["minor", "patch", "digest", "pinDigest"],
+      "pinDigests": true,
+      "groupName": "Docker build images (non-major)"
+    },
+    {
+      "description": "Preserve full-SHA GitHub Action pins and group compatible non-major updates.",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "pinDigests": true,
+      "groupName": "GitHub Actions (non-major)"
+    },
+    {
+      "description": "Do not manage local or production Sporttracker image references.",
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["sporttracker", "ghcr.io/kruemelnerd/sporttracker"],
+      "enabled": false
+    }
+  ]
+}
