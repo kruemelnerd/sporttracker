@@ -33,7 +33,7 @@ jobs:
       - name: Set up Node.js 24
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: '24'
+          node-version: '26'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: Install frontend dependencies for Playwright CLI
@@ -85,7 +85,7 @@ jobs:
       - name: Set up Node.js 24
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          node-version: '24'
+          node-version: '26'
       - name: Check npm dependencies (high and critical fail)
         working-directory: frontend
         run: npm audit --audit-level=high
