@@ -1,7 +1,11 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import App from './App.vue'
+
+vi.mock('./api', () => ({ getVersion: vi.fn().mockResolvedValue({ applicationVersion: '1.2.3',
+  installedCommit: null, installedDigest: null, latestCommit: null, latestDigest: null,
+  updateStatus: 'UNKNOWN', lastCheckedAt: null, errorStatus: null }) }))
 
 const mountApp = async (path = '/') => {
   const router = createRouter({
@@ -28,6 +32,8 @@ describe('App shell', () => {
     expect(wrapper.find('nav a[href="/"]').text()).toContain('Übersicht')
     expect(wrapper.find('nav a[href="/import"]').text()).toContain('Import')
     expect(wrapper.find('nav a[aria-current="page"]').attributes('href')).toBe('/')
+    expect(wrapper.get('footer summary').text()).toContain('1.2.3')
+    expect(wrapper.get('footer summary').text()).toContain('Update-Status unbekannt')
   })
 
   it('provides a current Trainingsplan navigation link', async () => {

@@ -114,6 +114,13 @@ a {
   padding: 1.5rem 0 3rem;
 }
 
+.app-footer {
+  width: min(100% - 2rem, var(--content-width));
+  margin: 0 auto;
+  padding: 0.5rem 0 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -157,7 +164,8 @@ a {
 }
 
 @media (min-width: 768px) {
-  .app-main {
+  .app-main,
+  .app-footer {
     width: min(100% - 3rem, var(--content-width));
   }
 }
