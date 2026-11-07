@@ -1,0 +1,5 @@
+# Temporary compatibility workaround: actionlint 1.7.12 does not yet recognize
+# the officially supported GitHub-hosted runner label ubuntu-26.04.
+self-hosted-runner:
+  labels:
+    - ubuntu-26.04
