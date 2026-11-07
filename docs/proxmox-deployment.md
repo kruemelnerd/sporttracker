@@ -40,7 +40,7 @@ Deployment-Identität ist ausschließlich der vollständige Digest, zum Beispiel
 ghcr.io/kruemelnerd/sporttracker@sha256:<64-stellige-hex-ID>
 ```
 
-Keine Tags wie `stable` oder `sha-...` als Deployment-Eingabe verwenden. Vor jedem Start/Update führt `scripts/deploy-verified.sh` ohne Skip-Option diese Schritte aus:
+Keine Tags wie `stable` oder `sha-...` als Deployment-Eingabe verwenden. Bei der Erstinstallation und bei regulären Updates führt `scripts/deploy-verified.sh` ohne Skip-Option diese Schritte aus; bei Updates wird es ausschließlich nach erfolgreichem Backup durch `scripts/update-production.sh` aufgerufen:
 
 1. Eingabeformat und Image-Repository auf den vollständigen Digest begrenzen.
 2. `scripts/verify-release.sh` ausführen; dieses lädt das Image per Digest und prüft dessen Quell- und Commit-Labels.
@@ -70,13 +70,13 @@ Jede fehlgeschlagene Release-Verifikation endet, bevor Compose ausgeführt wird.
 
 4. Secret-Verzeichnis außerhalb des Repositories mit Zugriff nur für den Betriebsbenutzer erstellen. Secret-Dateien außerhalb der VM- oder Terminal-History generieren. Host-Dateirechte `0400`; PostgreSQL-Dateien müssen für Container-UID 999 und App-Configtree-Dateien für UID 10001 lesbar sein. App-URL-/Benutzerdateien dürfen keine Passwörter enthalten. Keine Secret-Werte als Kommandoargumente übergeben.
 5. Eine private Compose-Umgebungsdatei mit Modus `0600` anlegen. Sie enthält Dateipfade (`POSTGRES_ADMIN_PASSWORD_FILE`, `POSTGRES_APP_PASSWORD_FILE`, `APP_DATABASE_URL_FILE`, `APP_DATABASE_USERNAME_FILE`, `APP_DATABASE_PASSWORD_FILE`) sowie `SPORTTRACKER_IMAGE=ghcr.io/kruemelnerd/sporttracker` und `SPORTTRACKER_IMAGE_DIGEST=sha256:<freigegebener Digest>`. Keine Secret-Werte selbst eintragen.
-6. Für eine erste leere Installation oder ein Update denselben geprüften Digest als Argument verwenden. Nach erfolgreicher Prüfung wird die Digest-Zeile in `production.env` atomar aktualisiert und eine private Kopie der vorherigen Datei behalten:
+6. Nur für eine erste leere Installation den geprüften Digest als Argument verwenden. Für reguläre Updates gilt stattdessen der [Update-Ablauf mit Pflicht-Backup](../README.md#manuelles-produktionsupdate-mit-pflicht-backup). Nach erfolgreicher Prüfung wird die Digest-Zeile in `production.env` atomar aktualisiert und eine private Kopie der vorherigen Datei behalten:
 
    ```bash
    scripts/deploy-verified.sh \
      --env-file /secure/path/production.env \
      --project sporttracker-prod \
-     ghcr.io/kruemelnerd/sporttracker@sha256:<64-stellige-hex-ID>
+     'ghcr.io/kruemelnerd/sporttracker@sha256:<64-stellige-hex-ID>'
    ```
 
    Platzhalter vor Ausführung ersetzen. Das Skript startet ausschließlich `compose.production.yaml`, führt keinen Restore von Entwicklungsdaten durch und erstellt/ersetzt keine externen Volumes. Der App-Start kann Flyway-Migrationen ausführen. Isolierte Tests und ein erfolgreicher Host-Setup-Lauf sind kein tatsächlicher Produktionsstart oder Release-Nachweis. Auch der positive Attestierungsnachweis aus GitHub Actions ersetzt den späteren Verifier-Lauf auf dem Zielsystem nicht.
