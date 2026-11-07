@@ -45,6 +45,19 @@ Running Dashboard is a local web application for importing and reviewing running
 - Describe the changes, tests, and known risks in the pull request. Check GitHub Actions status when possible, report it, and provide the pull request link at the end of the task.
 - If pull request creation fails, check GitHub CLI authentication and repository permissions, and use GitHub CLI if another integration is restricted. Never change credentials without asking. If permissions remain insufficient, report the specific cause and a manual pull request creation link.
 
+### GitHub PR Creation
+
+After pushing a feature branch:
+1. Check whether a pull request already exists.
+2. Create the pull request using the GitHub CLI.
+3. Prefer the locally authenticated GitHub CLI:
+
+   `env -u GH_TOKEN -u GITHUB_TOKEN gh pr create --base main --fill`
+
+4. If authentication fails, report the error.
+5. Never expose tokens or credentials.
+6. Never merge pull requests without explicit user approval.
+
 ## Prohibited Actions
 
 Without the user's explicit approval, never merge pull requests, enable auto-merge, bypass branch protection, disable security checks, perform production deployments, modify production data or volumes, force-push, or rewrite shared history.
