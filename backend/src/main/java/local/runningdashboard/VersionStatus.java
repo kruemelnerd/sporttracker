@@ -4,9 +4,14 @@ enum VersionStatus {
     CURRENT, UPDATE_AVAILABLE, REBUILD_AVAILABLE, DIFFERENT_RELEASE, UNKNOWN;
 
     static VersionStatus compare(String installedDigest, String latestDigest, String installedCommit, String latestCommit) {
+        return compare(installedDigest, latestDigest, installedCommit, latestCommit, false);
+    }
+
+    static VersionStatus compare(String installedDigest, String latestDigest, String installedCommit, String latestCommit, boolean provenNewer) {
         if (!validDigest(installedDigest) || !validDigest(latestDigest)) return UNKNOWN;
         if (installedDigest.equals(latestDigest)) return CURRENT;
         if (validCommit(installedCommit) && installedCommit.equals(latestCommit)) return REBUILD_AVAILABLE;
+        if (provenNewer && validCommit(installedCommit) && validCommit(latestCommit)) return UPDATE_AVAILABLE;
         return DIFFERENT_RELEASE;
     }
 
@@ -14,7 +19,7 @@ enum VersionStatus {
         return digest != null && digest.matches("sha256:[0-9a-f]{64}");
     }
 
-    private static boolean validCommit(String commit) {
+    static boolean validCommit(String commit) {
         return commit != null && commit.matches("[0-9a-f]{40}");
     }
 }

@@ -17,4 +17,16 @@ class VersionStatusTest {
         assertEquals(VersionStatus.DIFFERENT_RELEASE, VersionStatus.compare(FIRST, SECOND, null, null));
         assertEquals(VersionStatus.UNKNOWN, VersionStatus.compare("invalid", SECOND, COMMIT, COMMIT));
     }
+
+    @Test
+    void newerReleaseRequiresProvenAncestryAndValidDistinctIdentities() {
+        String otherCommit = "d".repeat(40);
+        assertEquals(VersionStatus.UPDATE_AVAILABLE, VersionStatus.compare(FIRST, SECOND, COMMIT, otherCommit, true));
+        assertEquals(VersionStatus.DIFFERENT_RELEASE, VersionStatus.compare(FIRST, SECOND, COMMIT, otherCommit, false));
+        assertEquals(VersionStatus.CURRENT, VersionStatus.compare(FIRST, FIRST, COMMIT, otherCommit, true));
+        assertEquals(VersionStatus.REBUILD_AVAILABLE, VersionStatus.compare(FIRST, SECOND, COMMIT, COMMIT, true));
+        assertEquals(VersionStatus.UNKNOWN, VersionStatus.compare(null, SECOND, COMMIT, otherCommit, true));
+        assertEquals(VersionStatus.DIFFERENT_RELEASE, VersionStatus.compare(FIRST, SECOND, null, otherCommit, true));
+        assertEquals(VersionStatus.DIFFERENT_RELEASE, VersionStatus.compare(FIRST, SECOND, COMMIT, "short", true));
+    }
 }
