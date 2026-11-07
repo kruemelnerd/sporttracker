@@ -2,6 +2,7 @@ package local.runningdashboard;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.info.BuildProperties;
@@ -13,20 +14,23 @@ public class VersionService {
     private static final Duration FAILURE_TTL = Duration.ofMinutes(5);
     private static final Duration REFRESH_INTERVAL = Duration.ofMinutes(1);
     private final GhcrRegistryClient registry;
+    private final GitHubCompareClient commits;
     private final Clock clock;
     private final String applicationVersion;
     private final String installedCommit;
     private final String installedDigest;
     private VersionResponse cached;
+    private Instant expiresAt;
 
     @Autowired
-    public VersionService(GhcrRegistryClient registry, BuildProperties build,
+    public VersionService(GhcrRegistryClient registry, GitHubCompareClient commits, BuildProperties build,
                           @Value("${SPORTTRACKER_IMAGE_DIGEST:}") String installedDigest) {
-        this(registry, build, installedDigest, Clock.systemUTC());
+        this(registry, commits, build, installedDigest, Clock.systemUTC());
     }
 
-    VersionService(GhcrRegistryClient registry, BuildProperties build, String installedDigest, Clock clock) {
+    VersionService(GhcrRegistryClient registry, GitHubCompareClient commits, BuildProperties build, String installedDigest, Clock clock) {
         this.registry = registry;
+        this.commits = commits;
         this.clock = clock;
         applicationVersion = build.getVersion() == null || build.getVersion().isBlank() ? "development" : build.getVersion();
         String commit = build.get("commit");
@@ -38,8 +42,7 @@ public class VersionService {
     public synchronized VersionResponse version(boolean refresh) {
         var now = clock.instant();
         if (cached != null) {
-            Duration ttl = cached.errorStatus() == null ? SUCCESS_TTL : FAILURE_TTL;
-            if (now.isBefore(cached.lastCheckedAt().plus(ttl))
+            if (now.isBefore(expiresAt)
                     && (!refresh || now.isBefore(cached.lastCheckedAt().plus(REFRESH_INTERVAL)))) {
                 return cached;
             }
@@ -54,8 +57,16 @@ public class VersionService {
         }
         String latestCommit = latest == null ? null : latest.commit();
         String latestDigest = latest == null ? null : latest.digest();
+        var comparison = GitHubCompareClient.Comparison.NOT_AHEAD;
+        if (VersionStatus.compare(installedDigest, latestDigest, installedCommit, latestCommit) == VersionStatus.DIFFERENT_RELEASE
+                && VersionStatus.validCommit(installedCommit) && VersionStatus.validCommit(latestCommit)) {
+            comparison = commits.compare(installedCommit, latestCommit);
+        }
         cached = new VersionResponse(applicationVersion, installedCommit, installedDigest, latestCommit, latestDigest,
-                VersionStatus.compare(installedDigest, latestDigest, installedCommit, latestCommit), clock.instant(), error);
+                VersionStatus.compare(installedDigest, latestDigest, installedCommit, latestCommit,
+                        comparison == GitHubCompareClient.Comparison.AHEAD), clock.instant(), error);
+        expiresAt = cached.lastCheckedAt().plus(error != null || comparison == GitHubCompareClient.Comparison.UNAVAILABLE
+                ? FAILURE_TTL : SUCCESS_TTL);
         return cached;
     }
 }
