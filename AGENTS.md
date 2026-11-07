@@ -35,8 +35,19 @@ Running Dashboard is a local web application for importing and reviewing running
 # Git and Delivery
 
 - Preserve pre-existing and untracked local changes. Review the working tree and stage only files belonging to the request; never include secrets or private data.
-- Commit only after required checks succeed. Push the verified result to the intended remote/branch when authorized by the task; do not force-push or rewrite shared history without explicit approval.
+- Commit only after required checks succeed. Push the verified result to the intended remote/branch when authorized by the task.
 - **Required skill:** use `safe-git-delivery` for commit/push work. It is global at `~/.config/opencode/skills/safe-git-delivery/SKILL.md`.
+
+## GitHub Pull Requests
+
+- After successfully completing a development task, create an appropriate feature, fix, or documentation branch, make small cohesive commits, and push the branch to `origin`.
+- Check whether a pull request already exists for the branch before creating one; never create duplicates. Create a pull request targeting `main`, using `gh pr create` if the available GitHub integration cannot create one.
+- Describe the changes, tests, and known risks in the pull request. Check GitHub Actions status when possible, report it, and provide the pull request link at the end of the task.
+- If pull request creation fails, check GitHub CLI authentication and repository permissions, and use GitHub CLI if another integration is restricted. Never change credentials without asking. If permissions remain insufficient, report the specific cause and a manual pull request creation link.
+
+## Prohibited Actions
+
+Without the user's explicit approval, never merge pull requests, enable auto-merge, bypass branch protection, disable security checks, perform production deployments, modify production data or volumes, force-push, or rewrite shared history.
 
 # Available Skills
 
