@@ -26,6 +26,11 @@
       "automerge": false
     },
     {
+      "description": "Keep TypeScript below 7 until the Vue toolchain supports it.",
+      "matchPackageNames": ["typescript"],
+      "allowedVersions": "<7"
+    },
+    {
       "description": "Keep PostgreSQL on major version 18; major upgrades need a planned database migration.",
       "matchDatasources": ["docker"],
       "matchPackageNames": ["postgres"],
