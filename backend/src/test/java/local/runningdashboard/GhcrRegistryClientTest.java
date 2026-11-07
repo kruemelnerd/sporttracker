@@ -64,6 +64,20 @@ class GhcrRegistryClientTest {
     }
 
     @Test
+    void expiredDeadlineIsTimeoutEvenWhenTransportOnlyReportsAClosedStream() {
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        server.expect(requestTo(BASE + "manifests/stable"))
+                .andRespond(withException(new IOException("private closed stream detail")));
+        var failure = assertThrows(GhcrRegistryClient.RegistryException.class,
+                () -> new GhcrRegistryClient(builder, Duration.ofNanos(1)).fetchStable());
+        assertEquals(GhcrRegistryClient.ErrorStatus.TIMEOUT, failure.status());
+        assertNull(failure.getCause());
+        assertFalse(failure.getMessage().contains("private"));
+        server.verify();
+    }
+
+    @Test
     void timeoutIsSanitized() {
         var builder = RestClient.builder();
         var server = MockRestServiceServer.bindTo(builder).build();
@@ -102,7 +116,8 @@ class GhcrRegistryClientTest {
                     URI.create("http://127.0.0.1:" + http.getAddress().getPort() + uri.getPath()), method));
             try {
                 assertTimeoutPreemptively(Duration.ofSeconds(3), () -> {
-                    var failure = assertThrows(GhcrRegistryClient.RegistryException.class, () -> new GhcrRegistryClient(builder).fetchStable());
+                    var failure = assertThrows(GhcrRegistryClient.RegistryException.class,
+                            () -> new GhcrRegistryClient(builder, Duration.ofMillis(100)).fetchStable());
                     assertEquals("TIMEOUT", failure.status().name());
                 });
             } finally {

@@ -31,16 +31,25 @@ public class GhcrRegistryClient {
     private static final int MAX_METADATA_BYTES = 1024 * 1024;
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private final RestClient client;
+    private final long readTimeoutNanos;
 
     @Autowired
     public GhcrRegistryClient(
             @Value("${running-dashboard.registry.connect-timeout:PT3S}") Duration connectTimeout,
             @Value("${running-dashboard.registry.read-timeout:PT5S}") Duration readTimeout) {
-        this(RestClient.builder().requestFactory(requestFactory(connectTimeout, readTimeout)));
+        this(RestClient.builder().requestFactory(requestFactory(connectTimeout, readTimeout)), readTimeout);
     }
 
     GhcrRegistryClient(RestClient.Builder builder) {
+        this(builder, Duration.ofSeconds(5));
+    }
+
+    GhcrRegistryClient(RestClient.Builder builder, Duration readTimeout) {
+        if (readTimeout == null || readTimeout.isZero() || readTimeout.isNegative()) {
+            throw new IllegalArgumentException("Registry read timeout must be positive");
+        }
         client = builder.baseUrl("https://ghcr.io").build();
+        readTimeoutNanos = readTimeout.toNanos();
     }
 
     static JdkClientHttpRequestFactory requestFactory(Duration connectTimeout, Duration readTimeout) {
@@ -113,14 +122,21 @@ public class GhcrRegistryClient {
     }
 
     private Response get(String path, String accept, String token) {
-        return client.get().uri(path).header(HttpHeaders.ACCEPT, accept)
-                .headers(headers -> { if (token != null) headers.setBearerAuth(token); })
-                .exchange((request, response) -> {
-            int status = response.getStatusCode().value();
-            byte[] body = status == 200 ? response.getBody().readNBytes(MAX_METADATA_BYTES + 1) : new byte[0];
-            if (body.length > MAX_METADATA_BYTES) throw new RegistryException(ErrorStatus.INVALID_RESPONSE);
-            return new Response(status, response.getHeaders(), body);
-        });
+        long started = System.nanoTime();
+        try {
+            return client.get().uri(path).header(HttpHeaders.ACCEPT, accept)
+                    .headers(headers -> { if (token != null) headers.setBearerAuth(token); })
+                    .exchange((request, response) -> {
+                        int status = response.getStatusCode().value();
+                        byte[] body = status == 200 ? response.getBody().readNBytes(MAX_METADATA_BYTES + 1) : new byte[0];
+                        if (body.length > MAX_METADATA_BYTES) throw new RegistryException(ErrorStatus.INVALID_RESPONSE);
+                        return new Response(status, response.getHeaders(), body);
+                    });
+        } catch (ResourceAccessException failure) {
+            // Spring may close a timed-out response body without an HttpTimeoutException cause.
+            if (System.nanoTime() - started >= readTimeoutNanos) throw new RegistryException(ErrorStatus.TIMEOUT);
+            throw failure;
+        }
     }
 
     private final class Session {
