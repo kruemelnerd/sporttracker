@@ -73,6 +73,16 @@ Logs können sensible Inhalte enthalten; vor Weitergabe sorgfältig prüfen und 
 
 Isolierte Wrapper-Tests (ohne Docker-Zugriff): `bash tests/security/update-production-test.sh`.
 
+## GHCR-Metadatenclient (Backend-Baustein)
+
+`GhcrRegistryClient.fetchStable()` liest ausschließlich Metadaten von `ghcr.io/kruemelnerd/sporttracker:stable`. Der vollständige SHA256-Digest entsteht aus den unveränderten Bytes des obersten Registry-Manifests, genau wie in CI. Ein vorhandener `Docker-Content-Digest` muss damit übereinstimmen. Bei OCI-Index bzw. Docker-Manifest-Liste bleibt der Index-Digest die Identität; für den optionalen Commit wird nur die eindeutige `linux/amd64`-Variante der bestehenden CI berücksichtigt. Der Commit stammt aus dem Label `org.opencontainers.image.revision` ihrer per Digest geprüften Image-Konfiguration. Fehlende oder ungültige Commit-Labels ergeben `null`.
+
+Es werden keine Image-Layer geladen und kein Docker-Daemon verwendet. Jede Metadatenantwort ist auf 1 MiB begrenzt. Die positiven Spring-Konfigurationswerte `running-dashboard.registry.connect-timeout` (Standard `PT3S`) und `running-dashboard.registry.read-timeout` (Standard `PT5S`) begrenzen Verbindungsaufbau und Antwortlesen. Eine Abfrage erfolgt erst beim Methodenaufruf, nicht beim Anwendungsstart, Healthcheck oder Readiness-Check.
+
+Der Client versucht zuerst anonymen Zugriff und beantwortet eine GHCR-Bearer-Challenge mit einem anonym angeforderten Token ausschließlich für `repository:kruemelnerd/sporttracker:pull`. Tokens bleiben innerhalb des Aufrufs und werden weder geloggt noch zurückgegeben. Fremde Authentifizierungs-URLs, Schreibberechtigungen und HTTP-Weiterleitungen werden nicht verfolgt. Private oder anderweitig gesperrte Pakete werden kontrolliert als `AUTHENTICATION_REQUIRED` bzw. `ACCESS_DENIED` gemeldet; aus der Sichtbarkeit des Git-Repositories wird keine Paketberechtigung abgeleitet. Persönliche Zugangsdaten unterstützt dieser Baustein nicht.
+
+Weitere bereinigte Fehlerwerte sind `NOT_FOUND`, `RATE_LIMITED`, `REGISTRY_UNAVAILABLE`, `TIMEOUT`, `NETWORK_ERROR` und `INVALID_RESPONSE`; Exceptions enthalten keine Registry-Antworttexte oder ursprünglichen Exceptions. Aufrufer müssen `RegistryException` behandeln. Cache, REST-API und Versionsoberfläche sind separate Folgeschritte. Die Metadaten sind **keine kryptografische Release-Freigabe**; Updates bleiben ausschließlich beim [manuellen Prozess mit Pflicht-Backup](#manuelles-produktionsupdate-mit-pflicht-backup) über `scripts/update-production.sh`.
+
 ## Voraussetzungen für die lokale Entwicklung
 
 - Java 25
