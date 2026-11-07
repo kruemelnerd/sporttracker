@@ -10,6 +10,14 @@ extra["jackson-bom.version"] = "3.1.8"
 group = "local.runningdashboard"
 version = "0.1.0-SNAPSHOT"
 
+springBoot {
+    buildInfo {
+        properties {
+            additional.set(mapOf("commit" to providers.gradleProperty("buildCommit").getOrElse("")))
+        }
+    }
+}
+
 val frontendDir = layout.projectDirectory.dir("../frontend")
 val frontendOutput = layout.buildDirectory.dir("generated/frontend")
 

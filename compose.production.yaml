@@ -9,6 +9,7 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: container
       DATA_DIRECTORY: /data
+      SPORTTRACKER_IMAGE_DIGEST: ${SPORTTRACKER_IMAGE_DIGEST:?Set SPORTTRACKER_IMAGE_DIGEST to sha256:<digest>}
       INTERVALS_ICU_ENABLED: "false"
     ports:
       - "127.0.0.1:8080:8080"

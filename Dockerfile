@@ -11,9 +11,10 @@ WORKDIR /workspace
 COPY . ./
 COPY --from=frontend /frontend/dist /frontend-build
 WORKDIR /workspace/backend
+ARG BUILD_COMMIT=""
 RUN --mount=type=cache,target=/root/.gradle/caches \
     --mount=type=cache,target=/root/.gradle/wrapper \
-    ./gradlew --no-daemon --max-workers=2 -PfrontendBuildOutput=/frontend-build bootJar && \
+    ./gradlew --no-daemon --max-workers=2 -PbuildCommit="$BUILD_COMMIT" -PfrontendBuildOutput=/frontend-build bootJar && \
     mkdir -p /healthcheck && javac -d /healthcheck /workspace/docker/healthcheck/Healthcheck.java
 
 FROM eclipse-temurin:25-jre-noble@sha256:a98128a57de944a72bd31fbc79b898edd5a5864d3652071d5bbd2160ab7d7dce AS runtime
