@@ -142,6 +142,17 @@ Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie 
 
 4. Das Backend starten. Der API-Key bleibt ausschließlich im Backend; der Sync läuft einseitig von Intervals.icu in die lokale Anwendung.
 
+## Versionsstatus-API
+
+`GET /api/version` liefert `applicationVersion`, `installedCommit`, `installedDigest`, `latestCommit`, `latestDigest`, `updateStatus`, `lastCheckedAt` und `errorStatus`.
+Version und Commit stammen aus den generierten Spring-Boot-Buildinformationen; der installierte Digest aus `SPORTTRACKER_IMAGE_DIGEST`, das Compose im Produktionsbetrieb bereits übergibt. Fehlende oder ungültige Digests/Commits werden als `null` ausgegeben. Ohne Produktions-Digest ist der Status `UNKNOWN`; die lokale Build-Version bleibt verfügbar.
+
+Der bestehende GHCR-Client liest die Metadaten von `stable` erst bei Bedarf. Erfolgreiche Prüfungen bleiben sechs Stunden, Fehler fünf Minuten im Prozessspeicher. `GET /api/version?refresh=true` erzwingt eine Prüfung außerhalb dieser Fristen, frühestens aber eine Minute nach Abschluss der letzten Prüfung. Häufigere Aktualisierungen liefern mit HTTP 200 den bestehenden Cache; gleichzeitige Aufrufe teilen eine Prüfung. Es gibt keinen Scheduler und keine Datenbankablage. HTTP-Antworten verwenden `Cache-Control: no-store`.
+
+`lastCheckedAt` ist der UTC-Abschlusszeitpunkt des letzten Prüfversuchs, auch bei Fehlern. Bei GHCR-Ausfall bleibt HTTP 200 mit den lokalen Informationen erhalten; `latestCommit`/`latestDigest` sind dann `null`, `updateStatus` ist `UNKNOWN` und `errorStatus` enthält ausschließlich einen definierten Fehlercode. Erfolgreiche Prüfungen haben `errorStatus: null`. Health und Readiness fragen GHCR nicht ab.
+
+Identische Digests ergeben `CURRENT`, neue Images zum selben nachgewiesenen Commit `REBUILD_AVAILABLE`. Unterschiedliche Releases ohne nachgewiesene zeitliche Reihenfolge ergeben `DIFFERENT_RELEASE`, nicht `UPDATE_AVAILABLE`. Dieser reine Metadatenvergleich ersetzt weder Release-Verifikation noch ein manuelles Produktionsupdate; ein Update wird nicht automatisch ausgeführt.
+
 ## Stoppen und Zurücksetzen
 
 ```bash
