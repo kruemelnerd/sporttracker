@@ -23,7 +23,7 @@ bash sporttracker-setup.sh --help
 
 Erneute normale Ausführung erhält funktionierende Installationen, insbesondere Docker. `--upgrade` führt kein OS-Release-Upgrade aus und verlangt bei einem anstehenden Docker-/containerd-Austausch manuelle Wartung statt eines automatischen Daemon-/Container-Neustarts. Paketkonflikte werden nicht automatisch deinstalliert. Ohne Docker-Socket-Berechtigung kann `--check` den Daemon nicht prüfen und meldet einen Fehler; das Skript fügt niemanden zur Docker-Gruppe hinzu.
 
-**Setup ist kein Deployment:** keine produktiven Volumes, Datenbankinitialisierung, Secrets, GHCR-Anmeldung oder Containerstarts. Release-Verifikation einschließlich vollständigem Trivy-Scan und anschließend `scripts/deploy-verified.sh` bleiben Pflicht. Derzeit wird das Sporttracker-Image nur für `linux/amd64` veröffentlicht; Werkzeuginstallation auf einer anderen unterstützten Architektur ist keine Image-Freigabe. Java/Node sind für diesen Betriebsweg nicht nötig.
+**Setup ist kein Deployment:** keine produktiven Volumes, Datenbankinitialisierung, Secrets, GHCR-Anmeldung oder Containerstarts. Für die Erstinstallation gilt die verlinkte Anleitung; reguläre Updates erfolgen ausschließlich über `scripts/update-production.sh` mit Backup und Release-Verifikation. Derzeit wird das Sporttracker-Image nur für `linux/amd64` veröffentlicht; Werkzeuginstallation auf einer anderen unterstützten Architektur ist keine Image-Freigabe. Java/Node sind für diesen Betriebsweg nicht nötig.
 
 Auch kleine Systeme wie LXC mit 2 GiB RAM + 2 GiB Swap, 4 vCPU und 40 GB werden berücksichtigt; Ressourcenwarnungen und mögliche Trivy-Speicherengpässe dürfen niemals zum Überspringen von Sicherheitsprüfungen führen. Details und die weiteren Freigabeschritte: [Linux-Erstinstallation](docs/proxmox-first-install.md).
 
@@ -33,19 +33,43 @@ Bei laufender Produktion erfolgt ein Versionswechsel ausschließlich nach erfolg
 
 Auf dem bereits eingerichteten Sporttracker-LXC mit dem produktiven Compose-Projekt:
 
+### 1. Repository aktualisieren
+
 ```bash
 cd /opt/sporttracker
 git status --short
 git pull --ff-only
+```
 
+Vorhandene lokale Änderungen prüfen und erhalten; keinen automatischen Reset durchführen. Bei einem fehlgeschlagenen Pull zuerst die Ursache manuell klären.
+
+### 2. Neues Release installieren
+
+```bash
 bash scripts/update-production.sh \
   --env-file /etc/sporttracker/production.env \
   --project sporttracker-prod \
   --backup-dir /var/backups/sporttracker \
-  'ghcr.io/kruemelnerd/sporttracker@sha256:<NEUER_64_STELLIGER_DIGEST>'
+  'ghcr.io/kruemelnerd/sporttracker@sha256:<NEUER_DIGEST>'
 ```
 
-Das Backup-Verzeichnis muss vorher erstellt sein und nur dem ausführenden Benutzer zugänglich sein (`install -d -m 700 /var/backups/sporttracker`). Die laufende Anwendung wird während des Backups kurz gestoppt und danach wieder gestartet. Bei gleichem **laufendem und konfiguriertem** Digest wird weder ein Backup noch ein Deployment ausgeführt. Parallel laufende Aufrufe dieses Wrappers werden gesperrt. Die Backups liegen weiterhin **nur lokal**, werden **nicht automatisch periodisch erstellt** und **nicht rotiert**; Restore-Test und externe Kopien bleiben empfohlen. Eine Flyway-Migration lässt sich nicht durch einen simplen Container-Rollback rückgängig machen. Das Backup-Skript und die Deploy-Skripte dürfen bei manuellen Updates nicht umgangen werden.
+`<NEUER_DIGEST>` durch den vollständigen SHA256-Digest (64 kleine Hexadezimalzeichen) eines erfolgreich geprüften GitHub-Actions-Releases ersetzen; niemals Tags verwenden. Die Image-Verifikation prüft Provenance, SBOM und Schwachstellen. Das Backup-Verzeichnis muss vorher erstellt sein und nur dem ausführenden Benutzer zugänglich sein (`install -d -m 700 /var/backups/sporttracker`); auch die private Umgebungsdatei muss ihm gehören. Die laufende Anwendung wird während des Backups kurz gestoppt und danach wieder gestartet. Bei gleichem **laufendem und konfiguriertem** Digest wird weder ein Backup noch ein Deployment ausgeführt. Parallel laufende Aufrufe dieses Wrappers werden gesperrt.
+
+Die produktiven PostgreSQL- und FIT-Volumes bleiben erhalten. Niemals produktive Volumes löschen oder die Datenbank zurücksetzen. Bei fehlgeschlagener Flyway-Migration gibt es keinen automatischen Rollback; Zustand erhalten und eine [manuelle Wiederherstellung](docs/containerization.md#wiederherstellung) planen. Die Backups liegen derzeit **nur lokal**; automatische Rotation oder externe Sicherung sind nicht eingerichtet. Restore-Tests und geschützte externe Kopien bleiben empfohlen. Weder Renovate noch GitHub Actions deployen automatisch.
+
+### 3. Ergebnis kontrollieren
+
+```bash
+docker compose --env-file /etc/sporttracker/production.env -p sporttracker-prod -f compose.production.yaml ps
+```
+
+Die Healthchecks von App und Datenbank müssen `healthy` anzeigen. Anschließend [https://sporttracker.philippveit.de](https://sporttracker.philippveit.de) aufrufen und die Anwendung prüfen. Bei Fehlern Container-Logs lokal kontrollieren, ohne Secrets auszugeben oder weiterzugeben:
+
+```bash
+docker compose --env-file /etc/sporttracker/production.env -p sporttracker-prod -f compose.production.yaml logs --since=15m app db
+```
+
+Logs können sensible Inhalte enthalten; vor Weitergabe sorgfältig prüfen und bereinigen. Weitere Hinweise zur [Fehlerbehandlung](docs/proxmox-deployment.md#fehlerbehandlung-und-offene-punkte).
 
 Isolierte Wrapper-Tests (ohne Docker-Zugriff): `bash tests/security/update-production-test.sh`.
 
@@ -128,16 +152,7 @@ Die gehostete Renovate-GitHub-App ist durch diese Änderung **nicht** installier
 
 Das Dependency Dashboard ist ein GitHub-Issue und zeigt ausstehende, begrenzte oder ignorierte Updates. Für jeden Renovate-PR: Diff, Release Notes und Kompatibilität prüfen, bei npm die aktualisierte Sperrdatei kontrollieren und alle bestehenden CI-Checks einschließlich Tests, Trivy, Gitleaks und Workflow-Prüfungen abwarten. Keine PRs werden automatisch gemergt. Nach einem manuellen Merge nach `main` baut, scannt, attestiert und veröffentlicht die bestehende CI ein GHCR-Image; sie deployt es nicht.
 
-Für ein manuelles Update auf dem Proxmox-LXC zuerst ein aktuelles, geprüftes Backup gemäß [Deployment-Dokumentation](docs/proxmox-deployment.md) erstellen. Danach den in der CI-Zusammenfassung ausgewiesenen vollständigen Deployment-Digest (nie `stable`) auf dem Zielsystem mit dem bestehenden Verifier ausrollen:
-
-```bash
-scripts/deploy-verified.sh \
-  --env-file /secure/path/production.env \
-  --project sporttracker-prod \
-  ghcr.io/kruemelnerd/sporttracker@sha256:<64-stellige-hex-ID>
-```
-
-Der Ablauf validiert Attestierungen, führt einen Trivy-Scan aus und aktualisiert erst danach den App-Service; er umgeht weder Backups noch die bestehenden Deployment-Schutzmaßnahmen.
+Für ein manuelles Update auf dem Proxmox-LXC ausschließlich den [Produktionsupdate-Ablauf mit Pflicht-Backup](#manuelles-produktionsupdate-mit-pflicht-backup) verwenden.
 
 ## Tests
 

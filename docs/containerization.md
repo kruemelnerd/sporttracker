@@ -37,7 +37,7 @@ Voraussetzungen: unterstütztes Linux-Zielsystem mit Bash und GNU coreutils (`re
 
 3. In einer geschützten Compose-Umgebungsdatei ausschließlich Pfade/Deploy-Konfiguration setzen (keine Passwortwerte), z. B. `POSTGRES_ADMIN_PASSWORD_FILE`, `POSTGRES_APP_PASSWORD_FILE`, `APP_DATABASE_URL_FILE`, `APP_DATABASE_USERNAME_FILE`, `APP_DATABASE_PASSWORD_FILE`, `SPORTTRACKER_IMAGE` und `SPORTTRACKER_IMAGE_DIGEST`. Image-Digest und Pfade vor dem Start verifizieren.
 
-4. Start ausschließlich über den verifizierten Deployment-Prozess; vollständigen freigegebenen Digest einsetzen, niemals `stable`:
+4. Erstinstallation ausschließlich über den verifizierten Deployment-Prozess; vollständigen freigegebenen Digest einsetzen, niemals `stable`. Für reguläre Updates stattdessen den [Update-Wrapper mit Pflicht-Backup](../README.md#manuelles-produktionsupdate-mit-pflicht-backup) verwenden:
 
    ```bash
    sudo bash scripts/deploy-verified.sh --env-file /secure/path/production.env --project sporttracker-prod 'ghcr.io/kruemelnerd/sporttracker@sha256:<freigegebener-64-stelliger-digest>'
@@ -98,7 +98,7 @@ Readiness, API-Antworten und das tatsächliche Lesen wiederhergestellter FIT-Ori
 ## Laufender Betrieb und Sicherheit
 
 - Logs ohne Secrets prüfen: `docker compose ... logs --since=15m app db`. Container-Health mit `docker compose ... ps` und `/api/health` bzw. `/api/ready` kontrollieren.
-- Reiner Neustart eines bereits verifizierten, persistent gespeicherten Digests ohne Konfigurations-/Imagewechsel: `docker compose ... restart app`. Jede Erstinstallation und jedes Image-Update ausschließlich über `scripts/deploy-verified.sh`; kein direktes `compose up` als alternativer Deploymentweg. Bei Fehlern Ursache prüfen; keine Volume-/Datenbank-Reparatur automatisieren.
+- Reiner Neustart eines bereits verifizierten, persistent gespeicherten Digests ohne Konfigurations-/Imagewechsel: `docker compose ... restart app`. Erstinstallation über `scripts/deploy-verified.sh`, reguläre Image-Updates ausschließlich über den [Update-Wrapper](../README.md#manuelles-produktionsupdate-mit-pflicht-backup); kein direktes `compose up` als alternativer Deploymentweg. Bei Fehlern Ursache prüfen; keine Volume-/Datenbank-Reparatur automatisieren.
 - Ressourcenlimits, Container-Logs und freien Platz auf Host/Volumes regelmäßig prüfen. Datenbank- und FIT-Volume wachsen unabhängig.
 - Image-Version: `docker compose ... images` und Container-Image-Digest via `docker inspect`; neue Images nur nach Backup, Release-Prüfung und geprüftem Restore-Pfad deployen. Der Deployment-Runner aktualisiert die gespeicherte Digest-Zeile atomar und bewahrt die vorige Compose-Umgebung auf, damit ein normaler Compose-Neustart nicht auf einen alten Digest zurückfällt.
 - Container laufen ohne Root (App UID 10001, PostgreSQL-Image-eigener Benutzer); App-Dateisysteme sind read-only, Capabilities reduziert, `no-new-privileges` aktiv. Secrets kommen als Dateien, nicht als Compose-Klartext-Umgebungswerte.
