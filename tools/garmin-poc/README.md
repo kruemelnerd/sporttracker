@@ -4,12 +4,20 @@ This opt-in command-line probe is not part of the application, FIT import, or an
 
 ## Run locally
 
-1. Create a Garmin Personal API key in Garmin Connect's [Personal API Key settings](https://connect.garmin.com/app/settings/personalApiToken). Garmin displays it only once; choose an expiration period and store the key in a local secret manager or protected shell environment. Do not put it in a command argument, repository file, chat, or shell history.
-2. In a shell where the key is already securely available as `GARMIN_PERSONAL_API_KEY`, from the repository root run:
+1. Create a Garmin Personal API key in Garmin Connect's [Personal API Key settings](https://connect.garmin.com/app/settings/personalApiToken). Garmin displays it only once; choose an expiration period and store it in a local secret manager or protected environment file. Do not put it in a command argument, repository file, chat, or shell history.
+2. From the repository root, load the user-managed file into a temporary shell environment and start the probe:
 
    ```sh
-   python3 tools/garmin-poc/garmin_poc.py --limit 3
+   (
+     set -e
+     set -a
+     . "$HOME/.config/sporttracker/garmin-poc.env"
+     set +a
+     python3 tools/garmin-poc/garmin_poc.py --limit 3
+   )
    ```
+
+   The Python PoC reads only `GARMIN_PERSONAL_API_KEY` from its environment. It never opens the env file; the subshell keeps the variable out of the parent shell after exit. Do not enable shell tracing (`set -x`). If the variable is absent/empty, the probe stops and reports configuration is required.
 
    Optional documented search parameters: `--start <zero-based offset>`, `--start-date YYYY-MM-DD`, `--end-date YYYY-MM-DD`, and `--activity-type <Garmin type>`. Each call reads one page, with `--limit` capped at 10.
 3. The summary JSON, individual JSON details, download ZIPs, and any contained FIT files are written only to `backend/data/garmin-poc/`, which Git ignores. The directory is restricted to the current user (`0700`), files to `0600`. Keep this local data private and remove it yourself when no longer needed.
