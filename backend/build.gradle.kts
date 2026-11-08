@@ -144,3 +144,16 @@ tasks.named<ProcessResources>("processResources") {
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     dependsOn(buildFrontend)
 }
+
+tasks.register<JavaExec>("inspectGarminPocFit") {
+    group = "verification"
+    description = "Inspect a local Garmin PoC FIT file with the existing FIT decoder."
+    dependsOn(tasks.testClasses)
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("local.runningdashboard.GarminPocFitInspector")
+    doFirst {
+        val fitFile = providers.gradleProperty("fitFile").orNull
+            ?: throw GradleException("Pass -PfitFile=/path/to/activity.fit")
+        args(fitFile)
+    }
+}
