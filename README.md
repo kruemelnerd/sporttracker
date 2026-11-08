@@ -73,6 +73,16 @@ Logs können sensible Inhalte enthalten; vor Weitergabe sorgfältig prüfen und 
 
 Isolierte Wrapper-Tests (ohne Docker-Zugriff): `bash tests/security/update-production-test.sh`.
 
+## GHCR-Metadatenclient
+
+`GhcrRegistryClient.fetchStable()` liest ausschließlich Metadaten von `ghcr.io/kruemelnerd/sporttracker:stable`. Der vollständige SHA256-Digest entsteht aus den unveränderten Bytes des obersten Registry-Manifests, genau wie in CI. Ein vorhandener `Docker-Content-Digest` muss damit übereinstimmen. Bei OCI-Index bzw. Docker-Manifest-Liste bleibt der Index-Digest die Identität; für den optionalen Commit wird nur die eindeutige `linux/amd64`-Variante der bestehenden CI berücksichtigt. Der Commit stammt aus dem Label `org.opencontainers.image.revision` ihrer per Digest geprüften Image-Konfiguration. Fehlende oder ungültige Commit-Labels ergeben `null`.
+
+Es werden keine Image-Layer geladen und kein Docker-Daemon verwendet. Jede Metadatenantwort ist auf 1 MiB begrenzt. Die positiven Spring-Konfigurationswerte `running-dashboard.registry.connect-timeout` (Standard `PT3S`) und `running-dashboard.registry.read-timeout` (Standard `PT5S`) begrenzen Verbindungsaufbau und Antwortlesen. Eine Abfrage erfolgt erst beim Methodenaufruf, nicht beim Anwendungsstart, Healthcheck oder Readiness-Check.
+
+Der Client versucht zuerst anonymen Zugriff und beantwortet eine GHCR-Bearer-Challenge mit einem anonym angeforderten Token ausschließlich für `repository:kruemelnerd/sporttracker:pull`. Tokens bleiben innerhalb des Aufrufs und werden weder geloggt noch zurückgegeben. Fremde Authentifizierungs-URLs und Schreibberechtigungen werden abgelehnt. Nur für die Image-Konfiguration ist genau ein HTTP-307-Verweis auf den passenden HTTPS-Blob unter `pkg-containers.githubusercontent.com` erlaubt, ohne Weitergabe des Registry-Tokens und mit anschließender Digest-Prüfung; alle anderen Redirects bleiben gesperrt. Private oder anderweitig gesperrte Pakete werden kontrolliert als `AUTHENTICATION_REQUIRED` bzw. `ACCESS_DENIED` gemeldet; aus der Sichtbarkeit des Git-Repositories wird keine Paketberechtigung abgeleitet. Persönliche Zugangsdaten unterstützt dieser Baustein nicht.
+
+Weitere bereinigte Fehlerwerte sind `NOT_FOUND`, `RATE_LIMITED`, `REGISTRY_UNAVAILABLE`, `TIMEOUT`, `NETWORK_ERROR` und `INVALID_RESPONSE`; Exceptions enthalten keine Registry-Antworttexte oder ursprünglichen Exceptions. Der Versionsservice behandelt diese Fehler und liefert sie über die bestehende [Versionsstatus-API und Footer-Anzeige](#versionsanzeige-im-pacebase-footer) aus. Die Metadaten sind **keine kryptografische Release-Freigabe**; Updates bleiben ausschließlich beim [manuellen Prozess mit Pflicht-Backup](#manuelles-produktionsupdate-mit-pflicht-backup) über `scripts/update-production.sh`.
+
 ## Voraussetzungen für die lokale Entwicklung
 
 - Java 25
@@ -131,6 +141,37 @@ Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie 
    ```
 
 4. Das Backend starten. Der API-Key bleibt ausschließlich im Backend; der Sync läuft einseitig von Intervals.icu in die lokale Anwendung.
+
+## Versionsanzeige im PACEBASE-Footer
+
+Der Footer zeigt die installierte Anwendungsversion und den Versionsstatus. Aufklappen (auch per Tastatur) öffnet die Details zur installierten Version und zum veröffentlichten `stable`-Release: Git-Commit als gekürzter GitHub-Link, vollständiger kopierbarer Image-Digest und Zeitpunkt der letzten Prüfung. **Auf Updates prüfen** aktualisiert diese Informationen innerhalb der unten beschriebenen Begrenzung. Escape schließt die Details.
+
+Die Anzeige informiert ausschließlich über verfügbare Releases. **Sie installiert keine Updates und lädt keine Images herunter.** Produktive Versionswechsel erfolgen weiterhin ausschließlich über `scripts/update-production.sh` mit Pflicht-Backup und verifizierter Release-Identität; ein angezeigtes Update ist keine Deployment-Freigabe.
+
+| Status | Bedeutung |
+| --- | --- |
+| `CURRENT` – Version aktuell | Installierter und veröffentlichter vollständiger Image-Digest sind identisch; Commit-Metadaten sind dafür nicht erforderlich. |
+| `UPDATE_AVAILABLE` – Update verfügbar | Unterschiedliche Digests und gültige unterschiedliche Commits; GitHub bestätigt das veröffentlichte Commit als echten Nachfolger des installierten Commits. |
+| `REBUILD_AVAILABLE` – Neuer Build verfügbar | Unterschiedliche Digests zum selben gültigen Commit. Ein anderer Build ist nicht automatisch ein neuerer Softwarestand. |
+| `DIFFERENT_RELEASE` – Anderes Release veröffentlicht | Unterschiedliche Digests ohne nachgewiesene neuere Commit-Abstammung, etwa bei älteren/divergierenden Commits, fehlenden Commit-Metadaten oder nicht verfügbarem GitHub-Vergleich. Kein Update-Nachweis. |
+| `UNKNOWN` – Update-Status unbekannt | Installierter oder veröffentlichter Digest fehlt/ist ungültig, etwa im lokalen Entwicklungsmodus oder bei GHCR-Ausfall. |
+
+### Versionsstatus-API und Build-Identität
+
+`GET /api/version` liefert `applicationVersion`, `installedCommit`, `installedDigest`, `latestCommit`, `latestDigest`, `updateStatus`, `lastCheckedAt` und `errorStatus`.
+Version und Commit stammen aus den generierten Spring-Boot-Buildinformationen (`build.version` / `build.commit`). CI übergibt denselben vollständigen Commit über `BUILD_COMMIT` an den Image-Build und an das OCI-Label `org.opencontainers.image.revision`; Docker reicht ihn als Gradle-Property `buildCommit` an das JAR weiter. Der installierte Digest stammt aus `SPORTTRACKER_IMAGE_DIGEST`: `compose.production.yaml` nutzt exakt dieselbe Variable für die digest-gepinnte Image-Referenz und die Backend-Umgebung, nicht eine Docker-Image-ID oder einen Plattform-Unterdigest. Der verifizierte Deployment-Aufruf setzt diesen Wert ausdrücklich auf den angeforderten Release-Digest, sodass ein geerbter alter Shell-Wert nicht die neue Anwendung falsch kennzeichnet. Veröffentlichten Commit und vollständigen GHCR-Digest liest der Metadatenclient aus `stable` wie oben beschrieben. Es werden weder Docker-Socket-Rechte noch persönliche GitHub-Tokens benötigt; Registry-Tokens bleiben ausschließlich im Backend.
+
+Fehlende oder ungültige Digests/Commits werden als `null` ausgegeben. Beim lokalen `bootRun` ohne Produktions-Digest ist der Status `UNKNOWN`; die lokale Build-Version bleibt verfügbar, ein Commit wird ohne explizites `-PbuildCommit=<vollständiger-Commit>` nicht erfunden. GHCR-Metadaten können trotzdem angezeigt werden. `0.1.0-SNAPSHOT` ist derzeit die feste Gradle-Anwendungsversion, kein aus `stable` abgeleiteter Release-Name; Commit und Digest unterscheiden die Builds eindeutig.
+
+### Cache, manueller Refresh und Ausfälle
+
+Der bestehende GHCR-Client liest die Metadaten von `stable` erst bei Bedarf. Erfolgreiche Prüfungen bleiben sechs Stunden, GHCR- oder GitHub-Abfragefehler fünf Minuten im Prozessspeicher. `GET /api/version?refresh=true` erzwingt eine Prüfung außerhalb dieser Fristen, frühestens aber eine Minute nach Abschluss der letzten Prüfung. Häufigere Aktualisierungen liefern mit HTTP 200 den bestehenden Cache; gleichzeitige Aufrufe teilen eine Prüfung einschließlich des GitHub-Vergleichs. Es gibt keinen Scheduler und keine Datenbankablage. HTTP-Antworten verwenden `Cache-Control: no-store`.
+
+`lastCheckedAt` ist der UTC-Abschlusszeitpunkt des letzten Prüfversuchs, auch bei Fehlern. Bei GHCR-Ausfall bleibt HTTP 200 mit den lokalen Informationen erhalten; `latestCommit`/`latestDigest` sind dann `null`, `updateStatus` ist `UNKNOWN` und `errorStatus` enthält ausschließlich einen definierten Fehlercode. Erfolgreiche Prüfungen haben `errorStatus: null`. Health und Readiness fragen GHCR nicht ab.
+
+Bei unterschiedlichen Digests und gültigen, unterschiedlichen vollständigen Commit-SHAs prüft das Backend zusätzlich anonym und ausschließlich lesend `https://api.github.com/repos/kruemelnerd/sporttracker/compare/{installedCommit}...{latestCommit}?per_page=1`. Nur `ahead` mit positivem `ahead_by`, `behind_by: 0` und installiertem Commit als `base_commit` und `merge_base_commit` ergibt `UPDATE_AVAILABLE`. Ältere, divergierende oder unklare Releases bleiben `DIFFERENT_RELEASE`. Bei GitHub-Timeouts, Rate-Limits, HTTP-/Netzwerkfehlern oder ungültigen Antworten bleiben alle lokalen und GHCR-Metadaten erhalten; es wird kein Update behauptet und nach fünf Minuten erneut geprüft. `errorStatus` bleibt ausschließlich für GHCR-Fehler reserviert; ein fehlgeschlagener GitHub-Vergleich hat keinen eigenen Frontend-Fehlercode.
+
+Pro Prüfversuch erfolgt höchstens eine GitHub-Anfrage ohne Token, automatische Wiederholung, Redirects oder weitere Pagination; die Antwortgröße ist auf 1 MiB begrenzt. Die GitHub-Verbindungs- und Antworttimeouts betragen standardmäßig zwei bzw. drei Sekunden (`running-dashboard.github.connect-timeout` / `running-dashboard.github.read-timeout`). Dieser Metadaten- und Abstammungsvergleich ersetzt weder Release-Verifikation noch ein manuelles Produktionsupdate; ein Update wird nicht automatisch ausgeführt.
 
 ## Stoppen und Zurücksetzen
 

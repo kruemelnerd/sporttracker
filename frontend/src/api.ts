@@ -2,6 +2,28 @@ export type HealthResponse = {
   status: string
 }
 
+export type VersionStatus = 'CURRENT' | 'UPDATE_AVAILABLE' | 'REBUILD_AVAILABLE' | 'DIFFERENT_RELEASE' | 'UNKNOWN'
+
+export type VersionRegistryError = 'AUTHENTICATION_REQUIRED' | 'ACCESS_DENIED' | 'NOT_FOUND' | 'RATE_LIMITED'
+  | 'REGISTRY_UNAVAILABLE' | 'TIMEOUT' | 'NETWORK_ERROR' | 'INVALID_RESPONSE'
+
+export type VersionResponse = {
+  applicationVersion: string
+  installedCommit: string | null
+  installedDigest: string | null
+  latestCommit: string | null
+  latestDigest: string | null
+  updateStatus: VersionStatus
+  lastCheckedAt: string | null
+  errorStatus: VersionRegistryError | null
+}
+
+export async function getVersion(refresh = false): Promise<VersionResponse> {
+  const response = await fetch(refresh ? '/api/version?refresh=true' : '/api/version')
+  if (!response.ok) throw new Error('Versionsinformationen konnten nicht geladen werden.')
+  return response.json() as Promise<VersionResponse>
+}
+
 export type FixtureSummary = {
   sport: string
   startTime: string

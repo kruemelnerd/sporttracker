@@ -19,6 +19,9 @@ if [[ $1 == image && $2 == inspect ]]; then
   exit 0
 fi
 if [[ $1 == volume && $2 == inspect ]]; then exit 0; fi
+if [[ $1 == compose && " $* " == *' up -d --wait --wait-timeout 180 app '* ]]; then
+  printf '%s\n' "${SPORTTRACKER_IMAGE_DIGEST:-}" >>"$DOCKER_ENV_LOG"
+fi
 if [[ $1 == compose && " $* " == *' up -d --wait --wait-timeout 180 app '* && ${COMPOSE_UP_FAIL:-} == true ]]; then exit 1; fi
 exit 0
 SH
@@ -39,6 +42,7 @@ exit 0
 SH
 chmod +x "$tmp/bin/"*
 export DOCKER_CALL_LOG="$tmp/docker.log"
+export DOCKER_ENV_LOG="$tmp/docker-env.log"
 touch "$DOCKER_CALL_LOG"
 image=ghcr.io/kruemelnerd/sporttracker@sha256:5bbc988288cf286507f0c6a7cd1c38ecf8c977c97d154ed21ce939a07837daf5
 
@@ -56,7 +60,8 @@ if grep -q 'compose ' "$DOCKER_CALL_LOG"; then
   echo 'Compose was invoked before release verification succeeded' >&2
   exit 1
 fi
-PATH="$tmp/bin:$PATH" VERIFY_SUCCESS=true "$root/scripts/deploy-verified.sh" --env-file "$tmp/compose.env" --project m831-test "$image" >/dev/null
+PATH="$tmp/bin:$PATH" VERIFY_SUCCESS=true SPORTTRACKER_IMAGE_DIGEST="sha256:$(printf '%064d' 0)" "$root/scripts/deploy-verified.sh" --env-file "$tmp/compose.env" --project m831-test "$image" >/dev/null
+grep -Fxq "${image##*@}" "$DOCKER_ENV_LOG" || { echo 'Compose did not receive the verified digest over an inherited old digest' >&2; exit 1; }
 grep -Fxq "SPORTTRACKER_IMAGE_DIGEST=${image##*@}" "$tmp/compose.env" || { echo 'Deployment did not persist the verified digest' >&2; exit 1; }
 compgen -G "$tmp/compose.env.previous.*" >/dev/null || { echo 'Previous Compose configuration was not retained' >&2; exit 1; }
 grep -q 'compose .*config --quiet' "$DOCKER_CALL_LOG" || { echo 'Deployment did not validate Compose configuration' >&2; exit 1; }

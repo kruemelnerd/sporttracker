@@ -149,6 +149,8 @@ jobs:
           platforms: linux/amd64
           load: true
           push: false
+          build-args: |
+            BUILD_COMMIT=${{ github.sha }}
           tags: ghcr.io/kruemelnerd/sporttracker:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/kruemelnerd/sporttracker

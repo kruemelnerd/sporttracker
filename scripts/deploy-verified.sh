@@ -77,7 +77,7 @@ chmod "$mode" "$updated_env" || fail 'could not preserve Compose environment per
 mv -f -- "$updated_env" "$env_file" || fail "could not atomically persist verified digest; previous configuration is at $saved_env"
 updated_env=
 
-if "${compose[@]}" up -d --wait --wait-timeout 180 app; then
+if SPORTTRACKER_IMAGE_DIGEST="${image##*@}" "${compose[@]}" up -d --wait --wait-timeout 180 app; then
   echo "Ready: $image (saved configuration: $env_file; previous: $saved_env)"
   exit 0
 fi
