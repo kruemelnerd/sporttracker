@@ -19,8 +19,10 @@ RUN --mount=type=cache,target=/root/.gradle/caches \
 
 FROM eclipse-temurin:25-jre-noble@sha256:a98128a57de944a72bd31fbc79b898edd5a5864d3652071d5bbd2160ab7d7dce AS runtime
 WORKDIR /app
-RUN apt-get update && \
-    apt-get install --only-upgrade --yes --no-install-recommends libbrotli1 && \
+RUN sed -i 's|http://archive.ubuntu.com/|https://archive.ubuntu.com/|; s|http://security.ubuntu.com/|https://security.ubuntu.com/|' /etc/apt/sources.list.d/ubuntu.sources && \
+    apt-get -o Acquire::Retries=0 update && \
+    apt-get -o Acquire::Retries=0 install --only-upgrade --yes --no-install-recommends apt libapt-pkg6.0t64 libbrotli1 && \
+    dpkg-query -W apt libapt-pkg6.0t64 | cut -f2 | while read -r version; do dpkg --compare-versions "$version" ge 2.8.4ubuntu0.1 || exit 1; done && \
     rm -rf /var/lib/apt/lists/* && \
     groupadd --system --gid 10001 app && \
     useradd --system --uid 10001 --gid 10001 --no-create-home app && \
