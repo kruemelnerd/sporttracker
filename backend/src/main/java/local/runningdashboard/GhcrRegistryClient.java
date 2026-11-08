@@ -1,5 +1,6 @@
 package local.runningdashboard;
 
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -114,6 +115,17 @@ public class GhcrRegistryClient {
         String configDigest = config.path("digest").asString("");
         requireDigest(configDigest);
         Response response = session.get(REPOSITORY + "blobs/" + configDigest, "application/json");
+        if (response.status() == 307) {
+            String location = response.headers().getFirst(HttpHeaders.LOCATION);
+            URI target = URI.create(location == null ? "" : location);
+            if (!"https".equals(target.getScheme()) || !"pkg-containers.githubusercontent.com".equals(target.getRawAuthority())
+                    || target.getRawFragment() != null || target.getRawPath() == null
+                    || !target.getRawPath().matches("/ghcr[a-z0-9]+/blobs/" + Pattern.quote(configDigest))) {
+                throw new RegistryException(ErrorStatus.INVALID_RESPONSE);
+            }
+            // GHCR redirects config blobs to signed storage URLs; never forward its pull token.
+            response = get(target, "application/json", null);
+        }
         requireSuccess(response);
         checkDigest(response, configDigest);
         String revision = object(response.body()).path("config").path("Labels")
@@ -122,9 +134,13 @@ public class GhcrRegistryClient {
     }
 
     private Response get(String path, String accept, String token) {
+        return get(URI.create("https://ghcr.io" + path), accept, token);
+    }
+
+    private Response get(URI target, String accept, String token) {
         long started = System.nanoTime();
         try {
-            return client.get().uri(path).header(HttpHeaders.ACCEPT, accept)
+            return client.get().uri(target).header(HttpHeaders.ACCEPT, accept)
                     .headers(headers -> { if (token != null) headers.setBearerAuth(token); })
                     .exchange((request, response) -> {
                         int status = response.getStatusCode().value();

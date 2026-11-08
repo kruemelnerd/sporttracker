@@ -331,6 +331,71 @@ class GhcrRegistryClientTest {
     }
 
     @Test
+    void readsRedirectedGhcrConfigWithoutForwardingThePullToken() throws Exception {
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        String config = "{\"config\":{\"Labels\":{\"org.opencontainers.image.revision\":\"" + COMMIT + "\"}}}";
+        String manifest = "{\"schemaVersion\":2,\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\",\"digest\":\"" + digest(config) + "\"}}";
+        String location = "https://pkg-containers.githubusercontent.com/ghcrblobs10/blobs/" + digest(config) + "?sig=a%2Fb&se=2026-11-07";
+        server.expect(requestTo(BASE + "manifests/stable"))
+                .andRespond(withStatus(HttpStatus.UNAUTHORIZED).header("WWW-Authenticate", CHALLENGE));
+        server.expect(requestTo("https://ghcr.io/token?service=ghcr.io&scope=repository:kruemelnerd/sporttracker:pull"))
+                .andRespond(withSuccess("{\"token\":\"secret-token\"}", MediaType.APPLICATION_JSON));
+        server.expect(requestTo(BASE + "manifests/stable"))
+                .andRespond(withSuccess(manifest, MediaType.parseMediaType(OCI)));
+        server.expect(requestTo(BASE + "blobs/" + digest(config)))
+                .andExpect(header("Authorization", "Bearer secret-token"))
+                .andRespond(withStatus(HttpStatus.TEMPORARY_REDIRECT).header("Location", location));
+        server.expect(requestTo(location)).andExpect(headerDoesNotExist("Authorization"))
+                .andRespond(withSuccess(config, MediaType.APPLICATION_JSON));
+
+        var result = new GhcrRegistryClient(builder).fetchStable();
+        assertEquals(digest(manifest), result.digest());
+        assertEquals(COMMIT, result.commit());
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"https://evil.invalid/", "http://pkg-containers.githubusercontent.com/ghcrblobs10/blobs/",
+            "https://pkg-containers.githubusercontent.com.evil.invalid/ghcrblobs10/blobs/",
+            "https://user@pkg-containers.githubusercontent.com/ghcrblobs10/blobs/",
+            "https://pkg-containers.githubusercontent.com:8443/ghcrblobs10/blobs/",
+            "https://pkg-containers.githubusercontent.com/other/", "", "/relative/"})
+    void configRedirectsCannotEscapeTheTrustedHttpsBlobLocation(String prefix) throws Exception {
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        String configDigest = digest("{\"config\":{}}");
+        String manifest = "{\"schemaVersion\":2,\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\",\"digest\":\"" + configDigest + "\"}}";
+        server.expect(requestTo(BASE + "manifests/stable"))
+                .andRespond(withSuccess(manifest, MediaType.parseMediaType(OCI)));
+        server.expect(requestTo(BASE + "blobs/" + configDigest))
+                .andRespond(withStatus(HttpStatus.TEMPORARY_REDIRECT).header("Location", prefix + configDigest));
+        var failure = assertThrows(GhcrRegistryClient.RegistryException.class, () -> new GhcrRegistryClient(builder).fetchStable());
+        assertEquals(GhcrRegistryClient.ErrorStatus.INVALID_RESPONSE, failure.status());
+        server.verify();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void redirectedConfigStillRequiresItsDigestAndCannotRedirectAgain(boolean redirectAgain) throws Exception {
+        var builder = RestClient.builder();
+        var server = MockRestServiceServer.bindTo(builder).build();
+        String configDigest = digest("{\"config\":{}}");
+        String manifest = "{\"schemaVersion\":2,\"config\":{\"mediaType\":\"application/vnd.oci.image.config.v1+json\",\"digest\":\"" + configDigest + "\"}}";
+        String location = "https://pkg-containers.githubusercontent.com/ghcrblobs10/blobs/" + configDigest;
+        server.expect(requestTo(BASE + "manifests/stable"))
+                .andRespond(withSuccess(manifest, MediaType.parseMediaType(OCI)));
+        server.expect(requestTo(BASE + "blobs/" + configDigest))
+                .andRespond(withStatus(HttpStatus.TEMPORARY_REDIRECT).header("Location", location));
+        server.expect(requestTo(location)).andExpect(headerDoesNotExist("Authorization"))
+                .andRespond(redirectAgain ? withStatus(HttpStatus.TEMPORARY_REDIRECT).header("Location", "https://evil.invalid/")
+                        : withSuccess("{\"config\":{\"Labels\":{\"org.opencontainers.image.revision\":\"" + COMMIT + "\"}}}", MediaType.APPLICATION_JSON));
+        var failure = assertThrows(GhcrRegistryClient.RegistryException.class, () -> new GhcrRegistryClient(builder).fetchStable());
+        assertEquals(GhcrRegistryClient.ErrorStatus.INVALID_RESPONSE, failure.status());
+        server.verify();
+    }
+
+    @Test
     void hashesExactManifestBytesAndReadsRevisionFromConfigWithoutDownloadingLayers() throws Exception {
         var builder = RestClient.builder();
         var server = MockRestServiceServer.bindTo(builder).build();
