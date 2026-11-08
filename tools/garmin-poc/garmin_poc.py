@@ -35,6 +35,17 @@ def _open_request(request, timeout):
     return _HTTP_OPENER.open(request, timeout=timeout)
 
 
+def _safe_content_type(headers):
+    value = headers.get("Content-Type", "").strip().lower()
+    allowed = {"application/json", "text/plain", "application/zip", "application/x-zip-compressed", "application/octet-stream"}
+    return value if value in allowed else "unknown"
+
+
+def _safe_content_length(headers):
+    value = headers.get("Content-Length", "")
+    return value if value.isascii() and value.isdecimal() and len(value) <= 10 else "unknown"
+
+
 @dataclass
 class Response:
     body: bytes
@@ -69,7 +80,7 @@ def _request(url, method="GET", headers=None, body=None, opener=_open_request):
                 raise PocError("Garmin response exceeds the 100 MiB PoC limit")
             return payload, response.status, response.headers
     except urllib.error.HTTPError as error:
-        retry_after = error.headers.get("Retry-After", "unknown") if error.headers else "unknown"
+        retry_after = "present" if error.headers and error.headers.get("Retry-After") else "unknown"
         raise PocError(f"Garmin returned HTTP {error.code}, retry-after={retry_after}") from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         raise PocError(f"Garmin request failed ({type(error).__name__})") from None
@@ -85,11 +96,18 @@ def _write(path, data):
 
 
 def _checked_output(path, repo_root):
-    output = path.resolve()
-    expected = (Path(repo_root).resolve() / "backend" / "data" / "garmin-poc").resolve()
-    if output != expected:
+    root = Path(repo_root).resolve()
+    expected = root / "backend" / "data" / "garmin-poc"
+    requested = Path(os.path.abspath(path))
+    components = (root / "backend", root / "backend" / "data", expected)
+    if requested != expected:
         raise PocError("output must be under backend/data/garmin-poc")
+    if any(component.is_symlink() for component in components):
+        raise PocError("symlinked output path is not allowed")
+    output = expected
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if any(component.is_symlink() for component in components):
+        raise PocError("symlinked output path is not allowed")
     output.chmod(stat.S_IRWXU)
     return output
 
@@ -114,7 +132,7 @@ def run(output_dir, limit=3, start_date=None, end_date=None, activity_type=None,
     if status != 200 or not token.strip():
         raise PocError(f"Token request failed (HTTP {status})")
     bearer = token.decode("utf-8").strip()
-    print(f"Token: HTTP {status}, content-type={headers.get('Content-Type', 'unknown')}, content-length={headers.get('Content-Length', 'unknown')}; token not displayed")
+    print(f"Token: HTTP {status}, content-type={_safe_content_type(headers)}, content-length={_safe_content_length(headers)}; token not displayed")
 
     params = {"start": start, "limit": limit}
     if start_date:
@@ -138,7 +156,7 @@ def run(output_dir, limit=3, start_date=None, end_date=None, activity_type=None,
     if len(activities) > limit:
         raise PocError("Activity search returned more items than the requested PoC limit")
     _write(output / "activities.json", json.dumps(activities, indent=2).encode())
-    print(f"Activity search: HTTP {status}, content-type={headers.get('Content-Type', 'unknown')}, content-length={headers.get('Content-Length', 'unknown')}, count={len(activities)}")
+    print(f"Activity search: HTTP {status}, content-type={_safe_content_type(headers)}, content-length={_safe_content_length(headers)}, count={len(activities)}")
 
     fit_files = 0
     for activity in activities:
@@ -156,7 +174,7 @@ def run(output_dir, limit=3, start_date=None, end_date=None, activity_type=None,
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise PocError("Activity detail returned invalid JSON") from None
         _write(output / f"{activity_id}.json", detail)
-        print(f"Activity detail: HTTP {detail_status}, content-type={detail_headers.get('Content-Type', 'unknown')}, content-length={detail_headers.get('Content-Length', 'unknown')}")
+        print(f"Activity detail: HTTP {detail_status}, content-type={_safe_content_type(detail_headers)}, content-length={_safe_content_length(detail_headers)}")
 
         archive, file_status, file_headers = _request(
             f"{BASE_URL}/download-service/files/activity/{activity_id}",
@@ -185,7 +203,7 @@ def run(output_dir, limit=3, start_date=None, end_date=None, activity_type=None,
                 names = ", ".join(Path(entry.filename).name for entry in entries) or "no files"
         except zipfile.BadZipFile:
             raise PocError("Activity download was not a ZIP archive") from None
-        print(f"Activity file: HTTP {file_status}, content-type={file_headers.get('Content-Type', 'unknown')}, content-length={file_headers.get('Content-Length', 'unknown')}, entries={len(entries)}, FIT entries={len(fit_entries)}")
+        print(f"Activity file: HTTP {file_status}, content-type={_safe_content_type(file_headers)}, content-length={_safe_content_length(file_headers)}, entries={len(entries)}, FIT entries={len(fit_entries)}")
 
     return Result(len(activities), fit_files)
 

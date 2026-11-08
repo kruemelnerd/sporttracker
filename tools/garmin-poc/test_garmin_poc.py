@@ -4,6 +4,8 @@ import stat
 import tempfile
 import unittest
 import zipfile
+from contextlib import redirect_stdout
+from email.message import Message
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
@@ -35,7 +37,7 @@ class GarminPocTests(unittest.TestCase):
             if request.full_url.endswith("/personal-api-key/token"):
                 return garmin_poc.Response(b"opaque-test-token", 200, {"Content-Type": "text/plain"})
             if "/activities/search/activities?" in request.full_url:
-                return garmin_poc.Response(json.dumps([{"activityId": 42}]).encode(), 200, {"Content-Type": "application/json"})
+                return garmin_poc.Response(json.dumps([{"activityId": 42}]).encode(), 200, {"Content-Type": "application/json; note=garmin-secret", "Content-Length": "garmin-secret"})
             if request.full_url.endswith("/files/activity/42"):
                 return garmin_poc.Response(archive_buffer.getvalue(), 200, {"Content-Type": "application/zip"})
             if request.full_url.endswith("/activity/42"):
@@ -44,9 +46,12 @@ class GarminPocTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temp, patch.dict("os.environ", {"GARMIN_PERSONAL_API_KEY": "test-key"}):
             out = Path(temp) / "backend" / "data" / "garmin-poc"
-            result = garmin_poc.run(out, 1, start_date="2026-01-01", end_date="2026-01-31",
-                                    activity_type="running", opener=opener, repo_root=temp, start=10)
+            captured = io.StringIO()
+            with redirect_stdout(captured):
+                result = garmin_poc.run(out, 1, start_date="2026-01-01", end_date="2026-01-31",
+                                        activity_type="running", opener=opener, repo_root=temp, start=10)
 
+            self.assertNotIn("garmin-secret", captured.getvalue())
             self.assertEqual(result.activities, 1)
             self.assertEqual(result.fit_files, 1)
             self.assertTrue((out / "activities.json").is_file())
@@ -91,6 +96,29 @@ class GarminPocTests(unittest.TestCase):
         with patch.dict("os.environ", {"GARMIN_PERSONAL_API_KEY": "test-key"}):
             with self.assertRaisesRegex(garmin_poc.PocError, "backend/data/garmin-poc"):
                 garmin_poc.run(Path("/tmp/not-ignored"), 1, opener=lambda *_a, **_k: self.fail("network called"), repo_root="/tmp/repo")
+
+    def test_rejects_symlinked_output_directory_before_request(self):
+        with tempfile.TemporaryDirectory() as temp, patch.dict("os.environ", {"GARMIN_PERSONAL_API_KEY": "test-key"}):
+            backend_data = Path(temp) / "backend" / "data"
+            backend_data.mkdir(parents=True)
+            tracked = Path(temp) / "tracked"
+            tracked.mkdir()
+            (backend_data / "garmin-poc").symlink_to(tracked, target_is_directory=True)
+            with self.assertRaisesRegex(garmin_poc.PocError, "symlink"):
+                garmin_poc.run(backend_data / "garmin-poc", 1,
+                               opener=lambda *_a, **_k: self.fail("network called"), repo_root=temp)
+
+    def test_http_error_does_not_echo_retry_after_header(self):
+        headers = Message()
+        headers["Retry-After"] = "private-garmin-secret"
+
+        def opener(request, timeout):
+            raise HTTPError(request.full_url, 429, "Too Many Requests", headers, None)
+
+        with patch.dict("os.environ", {"GARMIN_PERSONAL_API_KEY": "test-key"}):
+            with self.assertRaises(garmin_poc.PocError) as raised:
+                garmin_poc.run(Path("backend/data/garmin-poc"), 1, opener=opener)
+        self.assertNotIn("private-garmin-secret", str(raised.exception))
 
 
 if __name__ == "__main__":
