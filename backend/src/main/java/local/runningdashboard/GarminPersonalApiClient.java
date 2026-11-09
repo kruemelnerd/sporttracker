@@ -101,6 +101,7 @@ public class GarminPersonalApiClient {
     }
 
     private Download request(String path, String method, String authorization, String accept, byte[] body) {
+        long deadline = System.nanoTime() + properties.responseTimeout().toNanos();
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(properties.baseUrl() + path))
                     .timeout(properties.responseTimeout()).header("Authorization", authorization)
@@ -108,7 +109,7 @@ public class GarminPersonalApiClient {
             HttpRequest request = method.equals("POST") ? builder.POST(HttpRequest.BodyPublishers.ofByteArray(body)).build() : builder.GET().build();
             HttpResponse<java.io.InputStream> response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
             try (var input = response.body()) {
-                byte[] bytes = input.readNBytes(properties.maxResponseBytes() + 1);
+                byte[] bytes = readBody(input, deadline);
                 if (bytes.length > properties.maxResponseBytes()) throw new GarminClientException("RESPONSE_TOO_LARGE");
                 return new Download(response.statusCode(), bytes,
                         response.headers().firstValue("Content-Type").orElse(null),
@@ -121,6 +122,23 @@ public class GarminPersonalApiClient {
             throw new GarminClientException("NETWORK_ERROR");
         } catch (IOException | IllegalArgumentException failure) {
             throw new GarminClientException("NETWORK_ERROR");
+        }
+    }
+
+    private byte[] readBody(java.io.InputStream input, long deadline) throws IOException, InterruptedException {
+        var read = new java.util.concurrent.FutureTask<>(() -> input.readNBytes(properties.maxResponseBytes() + 1));
+        Thread.ofVirtual().start(read);
+        try {
+            long remaining = deadline - System.nanoTime();
+            if (remaining <= 0) throw new java.util.concurrent.TimeoutException();
+            return read.get(remaining, java.util.concurrent.TimeUnit.NANOSECONDS);
+        } catch (java.util.concurrent.TimeoutException timeout) {
+            read.cancel(true);
+            try { input.close(); } catch (IOException ignored) { }
+            throw new IOException("Response body timed out", timeout);
+        } catch (java.util.concurrent.ExecutionException failure) {
+            if (failure.getCause() instanceof IOException ioFailure) throw ioFailure;
+            throw new IOException(failure.getCause());
         }
     }
 

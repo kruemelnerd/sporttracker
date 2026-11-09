@@ -319,6 +319,19 @@ class IntervalsIcuSyncServiceTests {
         assertEquals(0, source.listCalls);
     }
 
+    @Test
+    void doesNotSuppressIntervalsAutomationWhenGarminHasNoApiKey() {
+        var sync = service(new FakeSource(List.of()));
+        var queued = new java.util.ArrayDeque<Runnable>();
+        var garmin = new GarminPersonalApiProperties(true, "", "https://personal.connectapi.garmin.com",
+                Duration.ofMinutes(30), 90, 50, 20, 52_428_800, Duration.ofSeconds(5), Duration.ofSeconds(30));
+        var triggers = new IntervalsIcuSyncTriggers(sync, queued::add, garmin);
+
+        assertFalse(triggers.automaticSyncSuppressed());
+        triggers.onApplicationReady();
+        assertEquals(1, queued.size());
+    }
+
     private IntervalsIcuSyncService service(ActivityImportSource source) {
         return service(source, mappings);
     }

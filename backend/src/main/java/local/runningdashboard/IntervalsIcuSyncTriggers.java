@@ -33,5 +33,5 @@ public class IntervalsIcuSyncTriggers {
         if (sync.configured() && !automaticSyncSuppressed()) sync.startAsync(executor);
     }
 
-    public boolean automaticSyncSuppressed() { return garmin.enabled() && sync.configured(); }
+    public boolean automaticSyncSuppressed() { return garmin.configured() && sync.configured(); }
 }

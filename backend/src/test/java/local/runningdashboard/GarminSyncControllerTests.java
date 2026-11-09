@@ -40,14 +40,16 @@ class GarminSyncControllerTests {
 
     @Test
     void statusWithoutAnApiKeyIsNotConfigured() throws Exception {
-        var props = props(false, "");
+        var props = props(true, "");
         var mvc = MockMvcBuilders.standaloneSetup(new GarminSyncController(service(props, new EmptySource()), props,
-                new IntervalsIcuProperties(false, "", "https://intervals.icu", Duration.ofMinutes(15), 90),
+                new IntervalsIcuProperties(true, "synthetic-intervals-key", "https://intervals.icu", Duration.ofMinutes(15), 90),
                 new SyncTaskExecutor())).build();
 
         mvc.perform(get("/api/imports/garmin/status"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.apiKeyPresent").value(false))
                 .andExpect(jsonPath("$.configured").value(false)).andExpect(jsonPath("$.connected").value(false));
+        mvc.perform(get("/api/imports/garmin/status"))
+                .andExpect(jsonPath("$.automaticSyncSuppressed").value(false));
     }
 
     @Test

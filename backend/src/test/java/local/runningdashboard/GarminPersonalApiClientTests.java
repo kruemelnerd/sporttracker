@@ -174,6 +174,27 @@ class GarminPersonalApiClientTests {
         assertEquals("NETWORK_ERROR", failure.code());
     }
 
+    @Test
+    void appliesResponseTimeoutToBodyReadsAfterHeadersArrive() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/personalapitoken-service/personal-api/personal-api-key/token", exchange -> respond(exchange, 200, "token"));
+        server.createContext("/activitylist-service/activities/search/activities", exchange -> {
+            exchange.sendResponseHeaders(200, 0);
+            try (var output = exchange.getResponseBody()) {
+                output.write('[');
+                output.flush();
+                try { Thread.sleep(1500); } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+                output.write(']');
+            }
+        });
+        server.start();
+
+        var failure = assertThrows(GarminClientException.class, () -> client(10, 2)
+                .listActivities(LocalDate.MIN, LocalDate.MAX));
+
+        assertEquals("NETWORK_ERROR", failure.code());
+    }
+
     private GarminPersonalApiClient client(int pageSize, int maxPages) {
         var properties = new GarminPersonalApiProperties(true, "private-test-key", "http://127.0.0.1:" + server.getAddress().getPort(),
                 Duration.ofMinutes(30), 90, pageSize, maxPages, 1_048_576, Duration.ofSeconds(1), Duration.ofSeconds(1));
