@@ -93,10 +93,16 @@ public class GarminSyncService {
                     if (file == null || file.body() == null) { counts.skipped++; continue; }
                     var outcome = imports.importFit(new ByteArrayInputStream(file.body()));
                     switch (outcome.status()) {
-                        case "IMPORTED" -> link(activity.id(), outcome.activityId(), counts, true);
+                        case "IMPORTED" -> {
+                            String linkError = link(activity.id(), outcome.activityId(), counts, true);
+                            if (linkError != null) error = linkError;
+                        }
                         case "DUPLICATE" -> {
                             if (outcome.activityId() == null) { counts.failed++; error = "AMBIGUOUS_ACTIVITY_MATCH"; }
-                            else link(activity.id(), outcome.activityId(), counts, false);
+                            else {
+                                String linkError = link(activity.id(), outcome.activityId(), counts, false);
+                                if (linkError != null) error = linkError;
+                            }
                         }
                         case "SKIPPED_NON_RUN" -> counts.skipped++;
                         default -> { counts.failed++; error = outcome.code() == null ? "ACTIVITY_IMPORT_FAILED" : outcome.code(); }
@@ -132,12 +138,15 @@ public class GarminSyncService {
                 counts.skipped, counts.failed, error, attemptedAt, completedAt);
     }
 
-    private void link(String externalId, Long activityId, Counts counts, boolean imported) {
-        if (activityId == null) { counts.failed++; return; }
+    private String link(String externalId, Long activityId, Counts counts, boolean imported) {
+        if (activityId == null) { counts.failed++; return "ACTIVITY_ID_MISSING"; }
         if (mappings.link("GARMIN", externalId, activityId)
                 || mappings.findActivityId("GARMIN", externalId).filter(activityId::equals).isPresent()) {
             if (imported) counts.imported++; else counts.alreadyPresent++;
-        } else counts.failed++;
+            return null;
+        }
+        counts.failed++;
+        return "EXTERNAL_ID_CONFLICT";
     }
 
     private static boolean isRun(String type) {

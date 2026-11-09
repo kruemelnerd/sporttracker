@@ -2,11 +2,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ImportView from './ImportView.vue'
 
-const { importFits, getIntervalsIcuStatus, startIntervalsIcuSync } = vi.hoisted(() => ({
-  importFits: vi.fn(), getIntervalsIcuStatus: vi.fn(), startIntervalsIcuSync: vi.fn(),
+const { importFits, getIntervalsIcuStatus, startIntervalsIcuSync, getGarminStatus, startGarminSync } = vi.hoisted(() => ({
+  importFits: vi.fn(), getIntervalsIcuStatus: vi.fn(), startIntervalsIcuSync: vi.fn(), getGarminStatus: vi.fn(), startGarminSync: vi.fn(),
 }))
 
-vi.mock('../api', () => ({ importFits, getIntervalsIcuStatus, startIntervalsIcuSync }))
+vi.mock('../api', () => ({ importFits, getIntervalsIcuStatus, startIntervalsIcuSync, getGarminStatus, startGarminSync }))
 
 const file = (name: string) => new File(['fit'], name, { type: 'application/octet-stream' })
 async function selectFiles(wrapper: ReturnType<typeof mount>, files: File[]) {
@@ -25,12 +25,74 @@ const status = (overrides = {}) => ({
   message: null,
   ...overrides,
 })
+const garminStatus = (overrides = {}) => ({
+  enabled: true, apiKeyPresent: true, configured: true, connected: true, running: false,
+  automaticSyncSuppressed: false, lastAttemptAt: null, lastSuccessfulSyncAt: null,
+  retryAfterUntil: null, lastResult: null, ...overrides,
+})
 
 describe('ImportView', () => {
   beforeEach(() => {
     importFits.mockReset()
     getIntervalsIcuStatus.mockReset().mockResolvedValue(status())
     startIntervalsIcuSync.mockReset().mockResolvedValue(status())
+    getGarminStatus.mockReset().mockResolvedValue(garminStatus())
+    startGarminSync.mockReset().mockResolvedValue(garminStatus())
+  })
+
+  it('shows an unconfigured Garmin source without revealing credentials', async () => {
+    getGarminStatus.mockResolvedValue(garminStatus({ enabled: false, apiKeyPresent: false, configured: false, connected: false }))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="garmin-status"]').text()).toContain('Nicht konfiguriert')
+    expect(wrapper.text()).toContain('GARMIN_PERSONAL_API_KEY')
+    expect(wrapper.get('[data-testid="garmin-sync"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('private-test-key')
+  })
+
+  it('distinguishes configured Garmin credentials from a verified connection', async () => {
+    getGarminStatus.mockResolvedValue(garminStatus({ connected: false }))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="garmin-status"]').text()).toContain('Konfiguriert, noch nicht verbunden')
+  })
+
+  it('shows Garmin running and completed totals and allows manual sync', async () => {
+    getGarminStatus.mockResolvedValue(garminStatus({ running: true }))
+    const wrapper = mount(ImportView)
+    await settle()
+    expect(wrapper.get('[data-testid="garmin-sync"]').attributes('disabled')).toBeDefined()
+
+    const result = garminStatus({ lastSuccessfulSyncAt: '2026-10-19T14:43:00Z', lastResult: {
+      started: true, checked: 3, imported: 1, alreadyPresent: 2, skipped: 0, failed: 0,
+      error: null, attemptedAt: '2026-10-19T14:43:00Z', completedAt: '2026-10-19T14:43:01Z',
+    } })
+    getGarminStatus.mockResolvedValue(result)
+    startGarminSync.mockResolvedValue(result)
+    await wrapper.unmount()
+    const mounted = mount(ImportView)
+    await settle()
+    expect(mounted.get('[data-testid="garmin-result"]').text()).toContain('3 geprüft · 1 neu · 2 bereits vorhanden')
+    await mounted.get('[data-testid="garmin-sync"]').trigger('click')
+    await settle()
+    expect(startGarminSync).toHaveBeenCalledOnce()
+    expect(mounted.text()).toContain('19.10.2026')
+  })
+
+  it('shows Garmin failure and primary-provider automation conflict', async () => {
+    getGarminStatus.mockResolvedValue(garminStatus({ automaticSyncSuppressed: true, lastResult: {
+      started: true, checked: 1, imported: 0, alreadyPresent: 0, skipped: 0, failed: 1,
+      error: 'RATE_LIMITED', attemptedAt: '2026-10-19T14:43:00Z', completedAt: '2026-10-19T14:43:01Z',
+    } }))
+    getIntervalsIcuStatus.mockResolvedValue(status({ automaticSyncSuppressed: true }))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="garmin-error"]').text()).toContain('RATE_LIMITED')
+    expect(wrapper.text()).toContain('Intervals.icu-Automatik ist deaktiviert')
+    expect(wrapper.text()).toContain('Manueller Intervals.icu-Import bleibt verfügbar')
   })
 
   it('shows the unconfigured Intervals state and setup hint', async () => {

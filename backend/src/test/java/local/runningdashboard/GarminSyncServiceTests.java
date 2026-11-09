@@ -103,6 +103,31 @@ class GarminSyncServiceTests {
     }
 
     @Test
+    void refusesToLinkAnExternalIdThatBecameMappedToAnotherActivity() {
+        Long otherId = jdbc.queryForObject("INSERT INTO activity (sport, start_time) VALUES ('cycling', ?) RETURNING id", Long.class,
+                java.sql.Timestamp.from(Instant.parse("2026-10-18T08:00:00Z")));
+        var reads = new java.util.concurrent.atomic.AtomicInteger();
+        var racingMappings = new ActivityImportSourceRepository(jdbc) {
+            @Override public java.util.Optional<Long> findActivityId(String provider, String externalId) {
+                return reads.incrementAndGet() == 1 ? java.util.Optional.empty() : java.util.Optional.of(otherId);
+            }
+            @Override public boolean link(String provider, String externalId, long activityId) { return false; }
+        };
+        try {
+            var source = new FakeSource(List.of(new ActivityImportSource.RemoteActivity("race", "running")), fit);
+
+            var result = service(source, racingMappings).synchronize();
+
+            assertEquals(1, result.failed());
+            assertEquals("EXTERNAL_ID_CONFLICT", result.error());
+            assertTrue(mappings.findActivityId("GARMIN", "race").isEmpty());
+            assertEquals("cycling", jdbc.queryForObject("SELECT sport FROM activity WHERE id = ?", String.class, otherId));
+        } finally {
+            jdbc.update("DELETE FROM activity WHERE id = ?", otherId);
+        }
+    }
+
+    @Test
     void rejectsParallelManualAndAutomaticSyncWithoutQueuing() throws Exception {
         var entered = new CountDownLatch(1);
         var release = new CountDownLatch(1);
@@ -131,9 +156,13 @@ class GarminSyncServiceTests {
     }
 
     private GarminSyncService service(ActivityImportSource source) {
+        return service(source, mappings);
+    }
+
+    private GarminSyncService service(ActivityImportSource source, ActivityImportSourceRepository repository) {
         var properties = new GarminPersonalApiProperties(true, "test-key", "https://personal.connectapi.garmin.com",
                 Duration.ofMinutes(30), 90, 50, 20, 52_428_800, Duration.ofSeconds(5), Duration.ofSeconds(30));
-        return new GarminSyncService(source, imports, mappings, properties, states,
+        return new GarminSyncService(source, imports, repository, properties, states,
                 Clock.fixed(Instant.parse("2026-10-19T10:00:00Z"), ZoneOffset.UTC), ZoneOffset.UTC);
     }
 

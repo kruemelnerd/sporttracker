@@ -29,7 +29,7 @@ public class GarminSyncController {
     }
 
     @GetMapping("/status")
-    public GarminSyncService.Status status() { return sync.status(properties.enabled() && intervals.enabled()); }
+    public GarminSyncService.Status status() { return sync.status(properties.enabled() && intervals.configured()); }
 
     @PostMapping("/sync")
     public ResponseEntity<GarminSyncService.Status> synchronize() {

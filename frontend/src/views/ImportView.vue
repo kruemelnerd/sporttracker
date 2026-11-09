@@ -4,6 +4,29 @@
       <div><h1>FIT-Dateien importieren</h1><p>Importiere deine Läufe direkt aus FIT-Dateien.</p></div>
       <a href="/">Zur Übersicht</a>
     </header>
+    <section class="intervals-card garmin-card" aria-labelledby="garmin-title" data-testid="garmin-card">
+      <div class="intervals-heading">
+        <div><h2 id="garmin-title">Garmin Connect</h2><p>Primäre FIT-Quelle</p></div>
+        <span class="connection-status" :class="{ connected: garminStatus?.connected }" data-testid="garmin-status" role="status" aria-live="polite">
+          {{ garminStatus?.connected ? '● Verbindung bestätigt' : garminStatus?.configured ? '○ Konfiguriert, noch nicht verbunden' : garminStatus?.apiKeyPresent ? '○ Deaktiviert' : garminStatus ? '○ Nicht konfiguriert' : garminLoading ? 'Status wird geladen' : 'Status nicht verfügbar' }}
+        </span>
+      </div>
+      <p v-if="garminStatus && !garminStatus.configured" class="intervals-hint">Garmin-Sync aktivieren und <code>GARMIN_PERSONAL_API_KEY</code> ausschließlich im Backend konfigurieren.</p>
+      <p v-else-if="garminLoading" class="intervals-hint" role="status">Status wird geladen …</p>
+      <p v-else-if="garminStatus?.running" class="intervals-hint" role="status" aria-live="polite">Synchronisierung läuft …</p>
+      <p class="sync-time">Letzte erfolgreiche Synchronisierung: <time v-if="garminStatus?.lastSuccessfulSyncAt">{{ formatSyncTime(garminStatus.lastSuccessfulSyncAt) }}</time><span v-else>Noch keine erfolgreiche Synchronisierung</span></p>
+      <section v-if="garminStatus?.lastResult" class="intervals-result" data-testid="garmin-result" aria-live="polite">
+        <p>{{ garminStatus.lastResult.checked }} geprüft · {{ garminStatus.lastResult.imported }} neu · {{ garminStatus.lastResult.alreadyPresent }} bereits vorhanden</p>
+        <p v-if="garminStatus.lastResult.skipped">{{ garminStatus.lastResult.skipped }} übersprungen</p>
+      </section>
+      <p v-if="garminStatus?.lastResult?.failed" class="intervals-error" data-testid="garmin-error" role="alert">{{ garminStatus.lastResult.error || `${garminStatus.lastResult.failed} Aktivitäten fehlgeschlagen.` }}</p>
+      <p v-if="garminError" class="intervals-error" data-testid="garmin-error" role="alert">{{ garminError }}</p>
+      <p v-if="garminStatus?.automaticSyncSuppressed" class="intervals-hint" role="status">Intervals.icu-Automatik ist deaktiviert, solange Garmin als primäre Auto-Quelle aktiviert ist.</p>
+      <p v-if="garminStatus?.retryAfterUntil" class="sync-time">Erneuter Versuch möglich ab {{ formatSyncTime(garminStatus.retryAfterUntil) }}</p>
+      <button class="start-button" data-testid="garmin-sync" type="button"
+        :disabled="!garminStatus?.configured || garminStatus.running || garminSubmitting || isGarminRateLimited"
+        @click="syncGarmin">Jetzt synchronisieren</button>
+    </section>
     <section class="intervals-card" aria-labelledby="intervals-title" data-testid="intervals-card">
       <div class="intervals-heading">
         <div><h2 id="intervals-title">Automatischer Import</h2><p>Intervals.icu</p></div>
@@ -12,8 +35,9 @@
         </span>
       </div>
       <p v-if="intervalsStatus && !intervalsStatus.configured" class="intervals-hint">API-Key über <code>INTERVALS_ICU_API_KEY</code> konfigurieren und <code>INTERVALS_ICU_ENABLED=true</code> setzen.</p>
-      <p v-else-if="intervalsLoading" class="intervals-hint" role="status">Status wird geladen …</p>
-      <p v-else-if="intervalsStatus?.configured && intervalsStatus.running" class="intervals-hint" role="status" aria-live="polite">Synchronisierung läuft …</p>
+      <p v-if="intervalsStatus?.automaticSyncSuppressed" class="intervals-hint" role="status">Automatische Synchronisierung pausiert: Garmin ist die primäre Quelle. Manueller Intervals.icu-Import bleibt verfügbar.</p>
+      <p v-if="intervalsLoading" class="intervals-hint" role="status">Status wird geladen …</p>
+      <p v-if="intervalsStatus?.configured && intervalsStatus.running" class="intervals-hint" role="status" aria-live="polite">Synchronisierung läuft …</p>
       <p class="sync-time">Letzte Synchronisation: <time v-if="intervalsStatus?.lastSuccessfulSyncAt">{{ formatSyncTime(intervalsStatus.lastSuccessfulSyncAt) }}</time><span v-else>Noch keine erfolgreiche Synchronisation</span></p>
       <section v-if="intervalsStatus?.lastResult" class="intervals-result" data-testid="intervals-result" aria-live="polite">
         <p>{{ intervalsStatus.lastResult.checked }} {{ intervalsStatus.lastResult.checked === 1 ? 'Aktivität' : 'Aktivitäten' }} geprüft · {{ intervalsStatus.lastResult.imported }} {{ intervalsStatus.lastResult.imported === 1 ? 'neuer Lauf importiert' : 'neue Läufe importiert' }} · {{ intervalsStatus.lastResult.alreadyPresent }} bereits vorhanden</p>
@@ -76,7 +100,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { getIntervalsIcuStatus, importFits, startIntervalsIcuSync, type ImportBatchError, type ImportOutcome, type IntervalsIcuStatus } from '../api'
+import { getGarminStatus, getIntervalsIcuStatus, importFits, startGarminSync, startIntervalsIcuSync, type GarminStatus, type ImportBatchError, type ImportOutcome, type IntervalsIcuStatus } from '../api'
 import ImportOutcomeBadge from '../components/ImportOutcomeBadge.vue'
 
 type QueueState = 'PENDING' | 'PROCESSING' | ImportOutcome['status']
@@ -91,12 +115,18 @@ const intervalsStatus = ref<IntervalsIcuStatus | null>(null)
 const intervalsLoading = ref(true)
 const intervalsSubmitting = ref(false)
 const intervalsError = ref('')
+const garminStatus = ref<GarminStatus | null>(null)
+const garminLoading = ref(true)
+const garminSubmitting = ref(false)
+const garminError = ref('')
 let intervalsPoll: number | undefined
+let garminPoll: number | undefined
 let nextId = 1
 const isOutcome = (state: QueueState): state is ImportOutcome['status'] =>
   !['PENDING', 'PROCESSING'].includes(state)
 
 const isRateLimited = computed(() => !!intervalsStatus.value?.retryAfterUntil && Date.parse(intervalsStatus.value.retryAfterUntil) > Date.now())
+const isGarminRateLimited = computed(() => !!garminStatus.value?.retryAfterUntil && Date.parse(garminStatus.value.retryAfterUntil) > Date.now())
 
 function formatSyncTime(value: string) {
   return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
@@ -138,8 +168,41 @@ async function syncIntervals() {
   }
 }
 
-onMounted(() => { void loadIntervalsStatus() })
-onBeforeUnmount(() => { if (intervalsPoll !== undefined) window.clearTimeout(intervalsPoll) })
+function pollGarmin() {
+  if (garminPoll !== undefined) window.clearTimeout(garminPoll)
+  if (garminStatus.value?.running) garminPoll = window.setTimeout(() => { void loadGarminStatus() }, 2000)
+  else if (isGarminRateLimited.value && garminStatus.value?.retryAfterUntil) {
+    const wait = Math.min(Date.parse(garminStatus.value.retryAfterUntil) - Date.now() + 50, 2_147_000_000)
+    garminPoll = window.setTimeout(() => { void loadGarminStatus() }, Math.max(0, wait))
+  }
+}
+
+async function loadGarminStatus() {
+  try {
+    garminStatus.value = await getGarminStatus()
+    garminError.value = ''
+  } catch {
+    garminError.value = 'Garmin Connect-Status konnte nicht geladen werden.'
+  } finally {
+    garminLoading.value = false
+    pollGarmin()
+  }
+}
+
+async function syncGarmin() {
+  if (!garminStatus.value?.configured || garminStatus.value.running || garminSubmitting.value || isGarminRateLimited.value) return
+  garminSubmitting.value = true
+  garminError.value = ''
+  try { garminStatus.value = await startGarminSync() }
+  catch { garminError.value = 'Garmin-Synchronisierung konnte nicht gestartet werden.' }
+  finally { garminSubmitting.value = false; pollGarmin() }
+}
+
+onMounted(() => { void loadIntervalsStatus(); void loadGarminStatus() })
+onBeforeUnmount(() => {
+  if (intervalsPoll !== undefined) window.clearTimeout(intervalsPoll)
+  if (garminPoll !== undefined) window.clearTimeout(garminPoll)
+})
 
 const messageFor = (outcome: ImportOutcome) => {
   if (outcome.status === 'IMPORTED') return 'Erfolgreich importiert.'

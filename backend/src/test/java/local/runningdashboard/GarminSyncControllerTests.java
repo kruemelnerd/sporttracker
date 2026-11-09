@@ -51,6 +51,17 @@ class GarminSyncControllerTests {
     }
 
     @Test
+    void statusReportsWhenIntervalsAutomationIsSuppressedByConfiguredGarmin() throws Exception {
+        var props = props(true, "synthetic-private-key");
+        var intervals = new IntervalsIcuProperties(true, "synthetic-intervals-key", "https://intervals.icu", Duration.ofMinutes(15), 90);
+        var mvc = MockMvcBuilders.standaloneSetup(new GarminSyncController(service(props, new EmptySource()), props, intervals,
+                new SyncTaskExecutor())).build();
+
+        mvc.perform(get("/api/imports/garmin/status"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.automaticSyncSuppressed").value(true));
+    }
+
+    @Test
     void manualSyncUsesTheServiceAndReturnsOnlyAggregateStatus() throws Exception {
         jdbc.update("DELETE FROM garmin_sync_state");
         var props = props(true, "synthetic-private-key");

@@ -123,6 +123,32 @@ export type IntervalsIcuStatus = {
   retryAfterUntil: string | null
   lastResult: IntervalsIcuSyncResult | null
   message: string | null
+  automaticSyncSuppressed?: boolean
+}
+
+export type GarminSyncResult = {
+  started: boolean
+  checked: number
+  imported: number
+  alreadyPresent: number
+  skipped: number
+  failed: number
+  error: string | null
+  attemptedAt: string | null
+  completedAt: string | null
+}
+
+export type GarminStatus = {
+  enabled: boolean
+  apiKeyPresent: boolean
+  configured: boolean
+  connected: boolean
+  running: boolean
+  automaticSyncSuppressed: boolean
+  lastAttemptAt: string | null
+  lastSuccessfulSyncAt: string | null
+  retryAfterUntil: string | null
+  lastResult: GarminSyncResult | null
 }
 
 export async function getHealth(): Promise<HealthResponse> {
@@ -168,4 +194,16 @@ export async function startIntervalsIcuSync(): Promise<IntervalsIcuStatus> {
   const response = await fetch('/api/imports/intervals-icu/sync', { method: 'POST' })
   if (!response.ok && response.status !== 409) throw new Error(`Intervals.icu sync request failed: ${response.status}`)
   return response.json() as Promise<IntervalsIcuStatus>
+}
+
+export async function getGarminStatus(): Promise<GarminStatus> {
+  const response = await fetch('/api/imports/garmin/status')
+  if (!response.ok) throw new Error('Garmin Connect-Status konnte nicht geladen werden.')
+  return response.json() as Promise<GarminStatus>
+}
+
+export async function startGarminSync(): Promise<GarminStatus> {
+  const response = await fetch('/api/imports/garmin/sync', { method: 'POST' })
+  if (!response.ok && response.status !== 409) throw new Error('Garmin-Synchronisierung konnte nicht gestartet werden.')
+  return response.json() as Promise<GarminStatus>
 }
