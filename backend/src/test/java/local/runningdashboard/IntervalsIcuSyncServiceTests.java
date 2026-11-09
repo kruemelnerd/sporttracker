@@ -286,7 +286,9 @@ class IntervalsIcuSyncServiceTests {
         var source = new FakeSource(List.of());
         var sync = service(source);
         var queued = new java.util.ArrayDeque<Runnable>();
-        var triggers = new IntervalsIcuSyncTriggers(sync, queued::add);
+        var triggers = new IntervalsIcuSyncTriggers(sync, queued::add,
+                new GarminPersonalApiProperties(false, "", "https://personal.connectapi.garmin.com",
+                        Duration.ofMinutes(30), 90, 50, 20, 52_428_800, Duration.ofSeconds(5), Duration.ofSeconds(30)));
 
         triggers.onApplicationReady();
         assertTrue(sync.running());
@@ -297,6 +299,24 @@ class IntervalsIcuSyncServiceTests {
         assertEquals(1, source.listCalls);
         assertFalse(sync.running());
         assertTrue(sync.lastResult().started());
+    }
+
+    @Test
+    void suppressesIntervalsAutomationWhenGarminIsEnabledButKeepsItsServiceAvailable() {
+        var source = new FakeSource(List.of());
+        var sync = service(source);
+        var queued = new java.util.ArrayDeque<Runnable>();
+        var garmin = new GarminPersonalApiProperties(true, "garmin-key", "https://personal.connectapi.garmin.com",
+                Duration.ofMinutes(30), 90, 50, 20, 52_428_800, Duration.ofSeconds(5), Duration.ofSeconds(30));
+        var triggers = new IntervalsIcuSyncTriggers(sync, queued::add, garmin);
+
+        assertTrue(triggers.automaticSyncSuppressed());
+        triggers.onApplicationReady();
+        triggers.onSchedule();
+
+        assertEquals(0, queued.size());
+        assertFalse(sync.running());
+        assertEquals(0, source.listCalls);
     }
 
     private IntervalsIcuSyncService service(ActivityImportSource source) {

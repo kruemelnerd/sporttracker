@@ -34,7 +34,7 @@ public class IntervalsIcuSyncService {
     private volatile SyncResult lastResult;
 
     @Autowired
-    public IntervalsIcuSyncService(ActivityImportSource source, ImportService imports,
+    public IntervalsIcuSyncService(@org.springframework.beans.factory.annotation.Qualifier("intervalsIcuActivitySource") ActivityImportSource source, ImportService imports,
                                    ActivityImportSourceRepository mappings, IntervalsIcuProperties properties,
                                    @Value("${running-dashboard.display-timezone:Europe/Berlin}") ZoneId activityDateZone) {
         this(source, imports, mappings, properties, Clock.systemUTC(), activityDateZone);
