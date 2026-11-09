@@ -23,7 +23,8 @@ class ContainerConfigurationTests {
         new ApplicationContextRunner().withInitializer(context -> context.getEnvironment().getPropertySources().remove("systemProperties"))
                 .withInitializer(new ConfigDataApplicationContextInitializer())
                 .withPropertyValues("spring.profiles.active=container", "DATABASE_URL=jdbc:postgresql://db/test",
-                        "DATABASE_USERNAME=test-user", "DATABASE_PASSWORD=synthetic-test-secret")
+                        "DATABASE_USERNAME=test-user", "DATABASE_PASSWORD=synthetic-test-secret",
+                        "GARMIN_PERSONAL_API_KEY=synthetic-garmin-key")
                 .run(context -> {
                     assertTrue(context.getEnvironment().acceptsProfiles(org.springframework.core.env.Profiles.of("container")));
                     assertEquals("0.0.0.0", context.getEnvironment().getProperty("server.address"));
@@ -33,6 +34,8 @@ class ContainerConfigurationTests {
                     assertEquals("test-user", context.getEnvironment().getProperty("spring.datasource.username"));
                     assertEquals("synthetic-test-secret", context.getEnvironment().getProperty("spring.datasource.password"));
                     assertEquals("false", context.getEnvironment().getProperty("running-dashboard.intervals-icu.enabled"));
+                    assertEquals("synthetic-garmin-key", context.getEnvironment().getProperty("running-dashboard.garmin-personal-api.api-key"));
+                    assertEquals("false", context.getEnvironment().getProperty("running-dashboard.garmin-personal-api.enabled"));
                     assertEquals("true", context.getEnvironment().getProperty("spring.flyway.clean-disabled"));
                     assertEquals("true", context.getEnvironment().getProperty("spring.flyway.validate-on-migrate"));
                     assertEquals("false", context.getEnvironment().getProperty("spring.flyway.baseline-on-migrate"));
@@ -62,12 +65,14 @@ class ContainerConfigurationTests {
     void configtreeReadsSyntheticDatabaseAndOptionalIntervalsSecrets() throws Exception {
         Files.writeString(secrets.resolve("DATABASE_PASSWORD"), "synthetic-db-secret");
         Files.writeString(secrets.resolve("INTERVALS_ICU_API_KEY"), "synthetic-intervals-key");
+        Files.writeString(secrets.resolve("GARMIN_PERSONAL_API_KEY"), "synthetic-garmin-key");
         var source = new ConfigTreePropertySource("test-secrets", secrets);
         var environment = new StandardEnvironment();
         environment.getPropertySources().addFirst(source);
 
         assertEquals("synthetic-db-secret", environment.getProperty("DATABASE_PASSWORD"));
         assertEquals("synthetic-intervals-key", environment.getProperty("INTERVALS_ICU_API_KEY"));
+        assertEquals("synthetic-garmin-key", environment.getProperty("GARMIN_PERSONAL_API_KEY"));
     }
 
     @Configuration(proxyBeanMethods = false)

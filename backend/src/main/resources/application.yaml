@@ -31,3 +31,14 @@ running-dashboard:
     base-url: ${INTERVALS_ICU_BASE_URL:https://intervals.icu}
     sync-interval: ${INTERVALS_ICU_SYNC_INTERVAL:PT15M}
     initial-lookback-days: ${INTERVALS_ICU_INITIAL_LOOKBACK_DAYS:90}
+  garmin-personal-api:
+    enabled: ${GARMIN_PERSONAL_API_ENABLED:false}
+    api-key: ${GARMIN_PERSONAL_API_KEY:}
+    base-url: ${GARMIN_PERSONAL_API_BASE_URL:https://personal.connectapi.garmin.com}
+    sync-interval: ${GARMIN_PERSONAL_API_SYNC_INTERVAL:PT30M}
+    initial-lookback-days: ${GARMIN_PERSONAL_API_INITIAL_LOOKBACK_DAYS:90}
+    page-size: ${GARMIN_PERSONAL_API_PAGE_SIZE:50}
+    max-pages: ${GARMIN_PERSONAL_API_MAX_PAGES:20}
+    max-response-bytes: ${GARMIN_PERSONAL_API_MAX_RESPONSE_BYTES:52428800}
+    connect-timeout: ${GARMIN_PERSONAL_API_CONNECT_TIMEOUT:PT5S}
+    response-timeout: ${GARMIN_PERSONAL_API_RESPONSE_TIMEOUT:PT30S}
