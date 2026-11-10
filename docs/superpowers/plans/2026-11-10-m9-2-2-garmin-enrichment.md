@@ -64,4 +64,4 @@
 
 - [x] Document exactly the three imported JSON fields, units/semantics and unimplemented uncertain fields; state no backfill and intentional resync only after the separate deletion feature is integrated.
 - [x] Run backend suite, frontend unit/typecheck/build, packaged backend build, isolated Playwright smoke, and `scripts/test-all.sh` if available and safe.
-- [ ] Review diff, migration number, status, and staged files; commit, push, check for an existing PR, then create one against `main` without merging/deploying.
+- [x] Review diff, migration number, status, and staged files; commit, push, check for an existing PR, then create one against `main` without merging/deploying.
