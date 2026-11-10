@@ -26,6 +26,7 @@ import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
@@ -82,6 +83,7 @@ class GarminJsonEnrichmentIntegrationTests {
     @Autowired private GarminSyncService sync;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private MockMvc mvc;
+    @MockitoBean private GarminSyncTriggers automaticSync;
 
     @AfterAll static void stopGarminMock() { if (garmin != null) garmin.stop(0); }
 
