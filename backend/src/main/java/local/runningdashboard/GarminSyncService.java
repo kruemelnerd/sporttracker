@@ -20,6 +20,8 @@ public class GarminSyncService {
     private final ActivityImportSourceRepository mappings;
     private final GarminPersonalApiProperties properties;
     private final GarminSyncStateRepository stateRepository;
+    private final SyncPauseRepository pauses;
+    private final DataMutationCoordinator mutations;
     private final Clock clock;
     private final ZoneId dateZone;
     private final AtomicBoolean running = new AtomicBoolean();
@@ -27,25 +29,34 @@ public class GarminSyncService {
     @org.springframework.beans.factory.annotation.Autowired
     public GarminSyncService(@org.springframework.beans.factory.annotation.Qualifier("garminActivityImportSource") ActivityImportSource source,
                              ImportService imports, ActivityImportSourceRepository mappings,
-                             GarminPersonalApiProperties properties, GarminSyncStateRepository stateRepository,
-                             @Value("${running-dashboard.display-timezone:Europe/Berlin}") ZoneId dateZone) {
-        this(source, imports, mappings, properties, stateRepository, Clock.systemUTC(), dateZone);
+                              GarminPersonalApiProperties properties, GarminSyncStateRepository stateRepository,
+                              SyncPauseRepository pauses, DataMutationCoordinator mutations,
+                              @Value("${running-dashboard.display-timezone:Europe/Berlin}") ZoneId dateZone) {
+        this(source, imports, mappings, properties, stateRepository, Clock.systemUTC(), dateZone, pauses, mutations);
     }
 
     GarminSyncService(ActivityImportSource source, ImportService imports, ActivityImportSourceRepository mappings,
                       GarminPersonalApiProperties properties, GarminSyncStateRepository stateRepository,
                       Clock clock, ZoneId dateZone) {
+        this(source, imports, mappings, properties, stateRepository, clock, dateZone, null, new DataMutationCoordinator());
+    }
+
+    GarminSyncService(ActivityImportSource source, ImportService imports, ActivityImportSourceRepository mappings,
+                      GarminPersonalApiProperties properties, GarminSyncStateRepository stateRepository,
+                      Clock clock, ZoneId dateZone, SyncPauseRepository pauses, DataMutationCoordinator mutations) {
         this.source = source;
         this.imports = imports;
         this.mappings = mappings;
         this.properties = properties;
         this.stateRepository = stateRepository;
+        this.pauses = pauses;
+        this.mutations = mutations;
         this.clock = clock;
         this.dateZone = dateZone;
     }
 
     public boolean startAsync(TaskExecutor executor) {
-        if (!properties.configured() || !running.compareAndSet(false, true)) return false;
+        if (!properties.configured() || isPaused() || !running.compareAndSet(false, true)) return false;
         Instant now = clock.instant();
         var old = stateRepository.find().orElse(null);
         if (old != null && old.retryAfterUntil() != null && now.isBefore(old.retryAfterUntil())) {
@@ -59,6 +70,7 @@ public class GarminSyncService {
 
     public SyncResult synchronize() {
         if (!properties.configured()) return result(false, 0, 0, 0, 0, 0, "NOT_CONFIGURED", null, null);
+        if (isPaused()) return result(false, 0, 0, 0, 0, 0, "SYNC_PAUSED", null, null);
         if (!running.compareAndSet(false, true)) return result(false, 0, 0, 0, 0, 0, "SYNC_ALREADY_RUNNING", null, null);
         var old = stateRepository.find().orElse(null);
         if (old != null && old.retryAfterUntil() != null && clock.instant().isBefore(old.retryAfterUntil())) {
@@ -69,6 +81,15 @@ public class GarminSyncService {
     }
 
     private SyncResult runClaimed() {
+        try (var ignored = mutations.acquire()) {
+            if (isPaused()) return result(false, 0, 0, 0, 0, 0, "SYNC_PAUSED", null, null);
+            return runClaimedLocked();
+        } finally {
+            running.set(false);
+        }
+    }
+
+    private SyncResult runClaimedLocked() {
         Instant attemptedAt = clock.instant();
         var previous = stateRepository.find().orElse(null);
         LocalDate newest = LocalDate.now(clock.withZone(dateZone));
@@ -91,7 +112,7 @@ public class GarminSyncService {
                 try {
                     var file = source.downloadActivityFile(activity.id());
                     if (file == null || file.body() == null) { counts.skipped++; continue; }
-                    var outcome = imports.importFit(new ByteArrayInputStream(file.body()));
+                    var outcome = imports.importFit(new ByteArrayInputStream(file.body()), "GARMIN");
                     switch (outcome.status()) {
                         case "IMPORTED" -> {
                             String linkError = link(activity.id(), outcome.activityId(), counts, true);
@@ -176,6 +197,7 @@ public class GarminSyncService {
 
     public boolean configured() { return properties.configured(); }
     public boolean running() { return running.get(); }
+    private boolean isPaused() { return pauses != null && pauses.isPaused("GARMIN"); }
     private static final class Counts { int checked; int imported; int alreadyPresent; int skipped; int failed; }
     public record SyncResult(boolean started, int checked, int imported, int alreadyPresent, int skipped, int failed,
                              String error, Instant attemptedAt, Instant completedAt) { }

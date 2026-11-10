@@ -73,6 +73,7 @@ class ImportControllerTests {
                 .andExpect(jsonPath("$.outcomes[0].originalRetained").value(true));
 
         Long activityId = jdbc.queryForObject("SELECT activity_id FROM import_file WHERE sha256 = ?", Long.class, FIXTURE_HASH);
+        assertEquals("MANUAL", jdbc.queryForObject("SELECT source FROM import_file WHERE sha256 = ?", String.class, FIXTURE_HASH));
         assertEquals(Instant.parse("2024-01-01T12:00:00Z"), jdbc.queryForObject("SELECT start_time FROM activity WHERE id = ?", Timestamp.class, activityId).toInstant());
         assertEquals(5000d, jdbc.queryForObject("SELECT distance_meters FROM activity WHERE id = ?", Double.class, activityId));
         assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM activity_record WHERE activity_id = ?", Integer.class, activityId));

@@ -151,6 +151,78 @@ export type GarminStatus = {
   lastResult: GarminSyncResult | null
 }
 
+export type DataManagementAction = 'DELETE_GARMIN' | 'DELETE_INTERVALS_ICU' | 'DELETE_ACTIVITIES' | 'RESET_APPLICATION_DATA'
+export type DataManagementStatus = {
+  enabled: boolean
+  garminPaused: boolean
+  intervalsPaused: boolean
+  pendingFileDeletions: number
+}
+export type DataDeletionPreview = {
+  token: string
+  action: DataManagementAction
+  affectedActivities: number
+  deletableActivities: number
+  protectedActivities: number
+  ambiguousActivities: number
+  sourceAssociations: number
+  records: number
+  laps: number
+  importFiles: number
+  trainingPlans: number
+  trainingPhases: number
+  plannedSessions: number
+  expiresAt: string
+  preservedData: string
+}
+export type DataDeletionResult = {
+  action: DataManagementAction
+  activitiesDeleted: number
+  activitiesProtected: number
+  activitiesAmbiguous: number
+  sourceAssociationsDeleted: number
+  recordsDeleted: number
+  lapsDeleted: number
+  importFilesDeleted: number
+  trainingPlansDeleted: number
+  trainingPhasesDeleted: number
+  plannedSessionsDeleted: number
+  filesDeleted: number
+  filesPending: number
+  filesFailed: number
+  garminPaused: boolean
+  intervalsPaused: boolean
+}
+
+export async function getDataManagementStatus(): Promise<DataManagementStatus> {
+  const response = await fetch('/api/data-management/status')
+  if (!response.ok) throw new Error('Datenverwaltungsstatus konnte nicht geladen werden.')
+  return response.json() as Promise<DataManagementStatus>
+}
+
+export async function previewDataDeletion(action: DataManagementAction): Promise<DataDeletionPreview> {
+  const response = await fetch('/api/data-management/preview', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }),
+  })
+  if (!response.ok) throw new Error(`Vorschau fehlgeschlagen (${response.status}).`)
+  return response.json() as Promise<DataDeletionPreview>
+}
+
+export async function confirmDataDeletion(action: DataManagementAction, token: string, phrase: string): Promise<DataDeletionResult> {
+  const response = await fetch('/api/data-management/confirm', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, token, phrase }),
+  })
+  if (!response.ok) throw new Error(`Löschen fehlgeschlagen (${response.status}). Bitte Vorschau neu laden.`)
+  return response.json() as Promise<DataDeletionResult>
+}
+
+export async function resumeDataSync(provider: 'GARMIN' | 'INTERVALS_ICU'): Promise<void> {
+  const response = await fetch(`/api/data-management/sync/${provider}/resume`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  })
+  if (!response.ok) throw new Error(`Synchronisierung konnte nicht freigegeben werden (${response.status}).`)
+}
+
 export async function getHealth(): Promise<HealthResponse> {
   const response = await fetch('/api/health')
   if (!response.ok) throw new Error(`Health request failed: ${response.status}`)

@@ -27,18 +27,22 @@ class GarminSyncServiceTests {
     @Autowired private ImportService imports;
     @Autowired private ActivityImportSourceRepository mappings;
     @Autowired private GarminSyncStateRepository states;
+    @Autowired private SyncPauseRepository pauses;
+    @Autowired private DataMutationCoordinator mutations;
     @Autowired private JdbcTemplate jdbc;
     private byte[] fit;
 
     @BeforeEach void setup() throws Exception {
         jdbc.update("DELETE FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", HASH);
         jdbc.update("DELETE FROM garmin_sync_state");
+        pauses.resume("GARMIN");
         try (InputStream input = new ClassPathResource("fit/synthetic-running.fit").getInputStream()) { fit = input.readAllBytes(); }
     }
 
     @AfterEach void cleanup() {
         jdbc.update("DELETE FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", HASH);
         jdbc.update("DELETE FROM garmin_sync_state");
+        pauses.resume("GARMIN");
     }
 
     @Test
@@ -54,7 +58,23 @@ class GarminSyncServiceTests {
         assertEquals(1, source.downloads);
         assertTrue(mappings.findActivityId("GARMIN", "771").isPresent());
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", Integer.class, HASH));
+        assertEquals("GARMIN", jdbc.queryForObject("SELECT source FROM import_file WHERE sha256 = ?", String.class, HASH));
         assertEquals(Instant.parse("2026-10-19T10:00:00Z"), states.find().orElseThrow().lastSuccessfulSyncAt());
+    }
+
+    @Test
+    void persistedPausePreventsManualAndAutomaticSyncFromCallingTheProvider() {
+        var source = new FakeSource(List.of(new ActivityImportSource.RemoteActivity("771", "trail_running")), fit);
+        var service = service(source);
+        pauses.pause("GARMIN");
+
+        var result = service.synchronize();
+
+        assertTrue(!result.started());
+        assertEquals("SYNC_PAUSED", result.error());
+        assertEquals(0, source.oldestCalls);
+        assertTrue(!service.startAsync(Runnable::run));
+        assertEquals(0, source.oldestCalls);
     }
 
     @Test
@@ -163,7 +183,7 @@ class GarminSyncServiceTests {
         var properties = new GarminPersonalApiProperties(true, "test-key", "https://personal.connectapi.garmin.com",
                 Duration.ofMinutes(30), 90, 50, 20, 52_428_800, Duration.ofSeconds(5), Duration.ofSeconds(30));
         return new GarminSyncService(source, imports, repository, properties, states,
-                Clock.fixed(Instant.parse("2026-10-19T10:00:00Z"), ZoneOffset.UTC), ZoneOffset.UTC);
+                Clock.fixed(Instant.parse("2026-10-19T10:00:00Z"), ZoneOffset.UTC), ZoneOffset.UTC, pauses, mutations);
     }
 
     private static class FakeSource implements ActivityImportSource {

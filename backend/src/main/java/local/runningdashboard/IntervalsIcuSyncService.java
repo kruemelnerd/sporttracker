@@ -27,6 +27,8 @@ public class IntervalsIcuSyncService {
     private final IntervalsIcuProperties properties;
     private final Clock clock;
     private final ZoneId activityDateZone;
+    private final SyncPauseRepository pauses;
+    private final DataMutationCoordinator mutations;
     private final AtomicBoolean running = new AtomicBoolean();
     private volatile Instant lastAttemptAt;
     private volatile Instant lastSuccessfulSyncAt;
@@ -35,34 +37,44 @@ public class IntervalsIcuSyncService {
 
     @Autowired
     public IntervalsIcuSyncService(@org.springframework.beans.factory.annotation.Qualifier("intervalsIcuActivitySource") ActivityImportSource source, ImportService imports,
-                                   ActivityImportSourceRepository mappings, IntervalsIcuProperties properties,
-                                   @Value("${running-dashboard.display-timezone:Europe/Berlin}") ZoneId activityDateZone) {
-        this(source, imports, mappings, properties, Clock.systemUTC(), activityDateZone);
+                                    ActivityImportSourceRepository mappings, IntervalsIcuProperties properties,
+                                    SyncPauseRepository pauses, DataMutationCoordinator mutations,
+                                    @Value("${running-dashboard.display-timezone:Europe/Berlin}") ZoneId activityDateZone) {
+        this(source, imports, mappings, properties, Clock.systemUTC(), activityDateZone, pauses, mutations);
     }
 
     IntervalsIcuSyncService(ActivityImportSource source, ImportService imports,
                             ActivityImportSourceRepository mappings, IntervalsIcuProperties properties, Clock clock) {
-        this(source, imports, mappings, properties, clock, clock.getZone());
+        this(source, imports, mappings, properties, clock, clock.getZone(), null, new DataMutationCoordinator());
     }
 
     IntervalsIcuSyncService(ActivityImportSource source, ImportService imports,
                             ActivityImportSourceRepository mappings, IntervalsIcuProperties properties, Clock clock, ZoneId activityDateZone) {
+        this(source, imports, mappings, properties, clock, activityDateZone, null, new DataMutationCoordinator());
+    }
+
+    IntervalsIcuSyncService(ActivityImportSource source, ImportService imports,
+                            ActivityImportSourceRepository mappings, IntervalsIcuProperties properties, Clock clock,
+                            ZoneId activityDateZone, SyncPauseRepository pauses, DataMutationCoordinator mutations) {
         this.source = source;
         this.imports = imports;
         this.mappings = mappings;
         this.properties = properties;
         this.clock = clock;
         this.activityDateZone = activityDateZone;
+        this.pauses = pauses;
+        this.mutations = mutations;
     }
 
     public SyncResult synchronize() {
         if (!properties.configured()) return SyncResult.notConfigured();
+        if (isPaused()) return SyncResult.notStarted("SYNC_PAUSED");
         if (!running.compareAndSet(false, true)) return SyncResult.notStarted("A sync is already running.");
         return runClaimed();
     }
 
     public boolean startAsync(TaskExecutor executor) {
-        if (!properties.configured() || !running.compareAndSet(false, true)) return false;
+        if (!properties.configured() || isPaused() || !running.compareAndSet(false, true)) return false;
         Instant now = clock.instant();
         if (retryAfterUntil != null && now.isBefore(retryAfterUntil)) {
             running.set(false);
@@ -78,6 +90,15 @@ public class IntervalsIcuSyncService {
     }
 
     private SyncResult runClaimed() {
+        try (var ignored = mutations.acquire()) {
+            if (isPaused()) return SyncResult.notStarted("SYNC_PAUSED");
+            return runClaimedLocked();
+        } finally {
+            running.set(false);
+        }
+    }
+
+    private SyncResult runClaimedLocked() {
         try {
             Instant now = clock.instant();
             if (retryAfterUntil != null && now.isBefore(retryAfterUntil)) return SyncResult.notStarted("Sync paused until the upstream rate limit clears.");
@@ -116,7 +137,7 @@ public class IntervalsIcuSyncService {
                             results.add(new ActivityResult(activity.id(), "SKIPPED", "NO_FIT_FILE", "Übersprungen: keine nutzbare FIT-Datei verfügbar."));
                             continue;
                         }
-                        ImportService.ImportOutcome outcome = imports.importFit(fit);
+                        ImportService.ImportOutcome outcome = imports.importFit(fit, "INTERVALS_ICU");
                         switch (outcome.status()) {
                             case "IMPORTED" -> link(activity, outcome.activityId(), true, counts, results);
                             case "DUPLICATE" -> {
@@ -178,6 +199,7 @@ public class IntervalsIcuSyncService {
     public Instant lastSuccessfulSyncAt() { return lastSuccessfulSyncAt; }
     public Instant retryAfterUntil() { return retryAfterUntil; }
     public SyncResult lastResult() { return lastResult; }
+    private boolean isPaused() { return pauses != null && pauses.isPaused("INTERVALS_ICU"); }
 
     private void link(ActivityImportSource.RemoteActivity activity, Long activityId, boolean imported,
                       Counts counts, List<ActivityResult> results) {

@@ -17,6 +17,8 @@ server:
   port: 8080
 
 running-dashboard:
+  data-management:
+    enabled: false
   data-directory: /data
   intervals-icu:
     api-key: ${INTERVALS_ICU_API_KEY:}

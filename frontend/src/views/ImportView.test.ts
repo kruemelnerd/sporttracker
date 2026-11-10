@@ -2,11 +2,14 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ImportView from './ImportView.vue'
 
-const { importFits, getIntervalsIcuStatus, startIntervalsIcuSync, getGarminStatus, startGarminSync } = vi.hoisted(() => ({
+const { importFits, getIntervalsIcuStatus, startIntervalsIcuSync, getGarminStatus, startGarminSync,
+  getDataManagementStatus, previewDataDeletion, confirmDataDeletion, resumeDataSync } = vi.hoisted(() => ({
   importFits: vi.fn(), getIntervalsIcuStatus: vi.fn(), startIntervalsIcuSync: vi.fn(), getGarminStatus: vi.fn(), startGarminSync: vi.fn(),
+  getDataManagementStatus: vi.fn(), previewDataDeletion: vi.fn(), confirmDataDeletion: vi.fn(), resumeDataSync: vi.fn(),
 }))
 
-vi.mock('../api', () => ({ importFits, getIntervalsIcuStatus, startIntervalsIcuSync, getGarminStatus, startGarminSync }))
+vi.mock('../api', () => ({ importFits, getIntervalsIcuStatus, startIntervalsIcuSync, getGarminStatus, startGarminSync,
+  getDataManagementStatus, previewDataDeletion, confirmDataDeletion, resumeDataSync }))
 
 const file = (name: string) => new File(['fit'], name, { type: 'application/octet-stream' })
 async function selectFiles(wrapper: ReturnType<typeof mount>, files: File[]) {
@@ -38,6 +41,10 @@ describe('ImportView', () => {
     startIntervalsIcuSync.mockReset().mockResolvedValue(status())
     getGarminStatus.mockReset().mockResolvedValue(garminStatus())
     startGarminSync.mockReset().mockResolvedValue(garminStatus())
+    getDataManagementStatus.mockReset().mockResolvedValue({ enabled: false, garminPaused: false, intervalsPaused: false, pendingFileDeletions: 0 })
+    previewDataDeletion.mockReset()
+    confirmDataDeletion.mockReset()
+    resumeDataSync.mockReset()
   })
 
   it('shows an unconfigured Garmin source without revealing credentials', async () => {
@@ -49,6 +56,65 @@ describe('ImportView', () => {
     expect(wrapper.text()).toContain('GARMIN_PERSONAL_API_KEY')
     expect(wrapper.get('[data-testid="garmin-sync"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).not.toContain('private-test-key')
+  })
+
+  it('keeps data-management controls hidden when the backend disables deletion', async () => {
+    const wrapper = mount(ImportView)
+    await settle()
+    expect(wrapper.find('[data-testid="data-management"]').exists()).toBe(false)
+  })
+
+  it('requires preview and the matching phrase before deleting, then shows the result', async () => {
+    getDataManagementStatus.mockResolvedValue({ enabled: true, garminPaused: false, intervalsPaused: false, pendingFileDeletions: 0 })
+    previewDataDeletion.mockResolvedValue({
+      token: 'preview-token', action: 'DELETE_GARMIN', affectedActivities: 2, deletableActivities: 1,
+      protectedActivities: 1, ambiguousActivities: 1, sourceAssociations: 2, records: 3, laps: 1,
+      importFiles: 1, trainingPlans: 0, trainingPhases: 0, plannedSessions: 0,
+      expiresAt: '2026-11-10T21:00:00Z', preservedData: 'Manuelle Aktivitäten bleiben erhalten.',
+    })
+    confirmDataDeletion.mockResolvedValue({ action: 'DELETE_GARMIN', activitiesDeleted: 1, activitiesProtected: 1,
+      activitiesAmbiguous: 1, sourceAssociationsDeleted: 2, recordsDeleted: 3, lapsDeleted: 1, importFilesDeleted: 1,
+      trainingPlansDeleted: 0, trainingPhasesDeleted: 0, plannedSessionsDeleted: 0, filesDeleted: 1,
+      filesPending: 0, filesFailed: 0, garminPaused: true, intervalsPaused: false })
+    const wrapper = mount(ImportView)
+    await settle()
+
+    await wrapper.get('[data-testid="delete-DELETE_GARMIN"]').trigger('click')
+    await settle()
+    expect(previewDataDeletion).toHaveBeenCalledWith('DELETE_GARMIN')
+    expect(wrapper.text()).toContain('1 wird gelöscht')
+    expect(wrapper.text()).toContain('1 geschützt')
+    expect(confirmDataDeletion).not.toHaveBeenCalled()
+    const phrase = wrapper.get('[data-testid="delete-phrase"]')
+    await phrase.setValue('falsch')
+    expect(wrapper.get('[data-testid="delete-confirm"]').attributes('disabled')).toBeDefined()
+    await phrase.setValue('GARMIN LÖSCHEN')
+    await wrapper.get('[data-testid="delete-confirm"]').trigger('click')
+    await settle()
+    expect(confirmDataDeletion).toHaveBeenCalledWith('DELETE_GARMIN', 'preview-token', 'GARMIN LÖSCHEN')
+    expect(wrapper.get('[data-testid="delete-result"]').text()).toContain('1 Aktivität gelöscht')
+  })
+
+  it('offers explicit sync resume controls for persistent provider pauses', async () => {
+    getDataManagementStatus.mockResolvedValue({ enabled: true, garminPaused: true, intervalsPaused: true, pendingFileDeletions: 2 })
+    const wrapper = mount(ImportView)
+    await settle()
+    expect(wrapper.text()).toContain('2 Dateibereinigungen ausstehend')
+    await wrapper.get('[data-testid="resume-GARMIN"]').trigger('click')
+    await settle()
+    expect(resumeDataSync).toHaveBeenCalledWith('GARMIN')
+  })
+
+  it('offers all four deletion actions and reports a failed or stale confirmation', async () => {
+    getDataManagementStatus.mockResolvedValue({ enabled: true, garminPaused: false, intervalsPaused: false, pendingFileDeletions: 0 })
+    previewDataDeletion.mockRejectedValue(new Error('Vorschau veraltet.'))
+    const wrapper = mount(ImportView)
+    await settle()
+    expect(wrapper.findAll('[data-testid^="delete-"]')).toHaveLength(4)
+    await wrapper.get('[data-testid="delete-RESET_APPLICATION_DATA"]').trigger('click')
+    await settle()
+    expect(wrapper.get('[data-testid="management-error"]').text()).toContain('Vorschau veraltet.')
+    expect(confirmDataDeletion).not.toHaveBeenCalled()
   })
 
   it('distinguishes configured Garmin credentials from a verified connection', async () => {
