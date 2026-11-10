@@ -9,13 +9,17 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
   set +a
 fi
 
+printf 'PACEBASE – Development\n----------------------\n'
+
 GARMIN_KEY_FILE="$HOME/.config/sporttracker/garmin-poc.env"
 if [[ "${GARMIN_PERSONAL_API_ENABLED:-false}" == true && -z "${GARMIN_PERSONAL_API_KEY:-}" ]]; then
   if [[ ! -r "$GARMIN_KEY_FILE" ]]; then
+    printf 'Garmin:        Enabled (key missing)\n' >&2
     echo "Garmin ist aktiviert, aber GARMIN_PERSONAL_API_KEY fehlt und $GARMIN_KEY_FILE ist nicht lesbar." >&2
     exit 1
   fi
   if ! (unset GARMIN_PERSONAL_API_KEY; source "$GARMIN_KEY_FILE" >/dev/null && [[ -n "${GARMIN_PERSONAL_API_KEY:-}" ]]); then
+    printf 'Garmin:        Enabled (key missing)\n' >&2
     echo "Garmin ist aktiviert, aber $GARMIN_KEY_FILE enthält keinen lesbaren, nicht-leeren GARMIN_PERSONAL_API_KEY." >&2
     exit 1
   fi

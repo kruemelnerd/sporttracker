@@ -11,12 +11,14 @@ cp "$ROOT_DIR/compose.yaml" "$TMP_DIR/project/compose.yaml"
 cat > "$TMP_DIR/bin/docker" <<'MOCK'
 #!/usr/bin/env bash
 [[ -z "${GARMIN_PERSONAL_API_KEY:-}" ]] || exit 70
+[[ $# == 7 && "$1" == compose && "$2" == -f && "$4" == up && "$5" == -d && "$6" == --wait && "$7" == db ]] || exit 74
 printf 'docker\n' >> "$EVENTS"
 MOCK
 cat > "$TMP_DIR/project/backend/gradlew" <<'MOCK'
 #!/usr/bin/env python3
 import os, signal, sys
 if sys.argv[1:] != ["--no-daemon", "bootRun"]: sys.exit(71)
+if os.environ.get("BACKEND_FAIL"): sys.exit(75)
 with open(os.environ["EVENTS"], "a") as f: f.write("backend:" + os.environ.get("GARMIN_PERSONAL_API_KEY", "") + "\n")
 open(os.environ["BACKEND_MARKER"], "w").close()
 def stop(*_):
@@ -42,17 +44,24 @@ while True: signal.pause()
 MOCK
 cat > "$TMP_DIR/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
-if grep -q '^backend:' "$EVENTS" && [[ "${HEALTH:-ok}" == ok ]]; then
+[[ " $* " == *' --connect-timeout 1 '* && " $* " == *' --max-time 1 '* && " $* " == *' http://127.0.0.1:8080/api/health '* ]] || exit 8
+health_count=$(($(grep -c '^health-' "$EVENTS" || true) + 1))
+if grep -q '^backend:' "$EVENTS" && { [[ "${HEALTH:-ok}" == ok ]] || (( health_count >= ${HEALTH_AFTER:-999} )); }; then
   [[ -f "$BACKEND_MARKER" ]] || exit 7
   printf 'health-ready\n' >> "$EVENTS"
   exit 0
 fi
 printf 'health-fail\n' >> "$EVENTS"
+if [[ "${HEALTH_PAUSE:-false}" == true ]]; then /bin/sleep .05; fi
 exit 7
 MOCK
 cat > "$TMP_DIR/bin/sleep" <<'MOCK'
 #!/usr/bin/env bash
-[[ "$1" == 1 || "$1" == 0.1 ]]
+if [[ "$1" == 1 ]]; then
+  printf 'health-sleep\n' >> "$EVENTS"
+elif [[ "$1" != 0.1 ]]; then
+  exit 1
+fi
 MOCK
 chmod +x "$TMP_DIR/bin/docker" "$TMP_DIR/bin/npm" "$TMP_DIR/bin/curl" "$TMP_DIR/bin/sleep" "$TMP_DIR/project/backend/gradlew"
 export HOME="$TMP_DIR/home" EVENTS="$TMP_DIR/events" BACKEND_MARKER="$TMP_DIR/backend.running" PATH="$TMP_DIR/bin:$PATH"
@@ -67,6 +76,7 @@ run_case() {
   local pid=$!
   for _ in {1..200}; do
     if [[ "$expected_status" == running ]] && grep -q '^frontend$' "$EVENTS" 2>/dev/null; then break; fi
+    if [[ "$expected_status" == startup ]] && grep -q '^health-fail$' "$EVENTS" 2>/dev/null; then break; fi
     if [[ "$expected_status" == fail ]] && ! kill -0 "$pid" 2>/dev/null; then break; fi
     kill -0 "$pid" 2>/dev/null || break
     /bin/sleep .05
@@ -78,9 +88,17 @@ run_case() {
     grep -q '^backend-stopped$' "$EVENTS"
     grep -q '^frontend-stopped$' "$EVENTS"
     ! kill -0 -- "-$pid" 2>/dev/null
+  elif [[ "$expected_status" == startup ]]; then
+    grep -q '^health-fail$' "$EVENTS"
+    kill -s "$signal_name" "$pid"
+    wait "$pid" || true
+    grep -q '^backend-stopped$' "$EVENTS"
+    ! grep -q '^frontend$' "$EVENTS"
+    ! kill -0 -- "-$pid" 2>/dev/null
   else
     if wait "$pid"; then echo "Expected $name to fail" >&2; return 1; fi
     ! grep -q '^frontend$' "$EVENTS"
+    ! kill -0 -- "-$pid" 2>/dev/null
   fi
 }
 
@@ -92,10 +110,15 @@ backend_line=$(grep -n '^backend:' "$EVENTS" | cut -d: -f1)
 health_line=$(grep -n '^health-ready$' "$EVENTS" | cut -d: -f1)
 frontend_line=$(grep -n '^frontend$' "$EVENTS" | cut -d: -f1)
 (( backend_line < health_line && health_line < frontend_line ))
+[[ "$(grep -c '^health-sleep$' "$EVENTS" || true)" == 0 ]]
+[[ "$(grep -c '^docker$' "$EVENTS" || true)" == 1 ]]
 grep -q 'PostgreSQL:    Ready' "$TMP_DIR/disabled.out"
 grep -q 'Backend:       Ready' "$TMP_DIR/disabled.out"
 grep -q 'Frontend:      Starting' "$TMP_DIR/disabled.out"
 ! grep -q 'Connected' "$TMP_DIR/disabled.out"
+grep -q 'PACEBASE – Development' "$TMP_DIR/disabled.out"
+run_case startup-signal startup TERM GARMIN_PERSONAL_API_ENABLED=false HEALTH=fail HEALTH_PAUSE=true
+run_case startup-sigint startup INT GARMIN_PERSONAL_API_ENABLED=false HEALTH=fail HEALTH_PAUSE=true
 
 # A local env file is loaded; key file assignment reaches backend only, never output.
 cat > "$TMP_DIR/project/.env" <<'ENV'
@@ -123,8 +146,15 @@ INTERVALS_ICU_ENABLED=false
 ENV
 run_case early-exit fail TERM GARMIN_PERSONAL_API_ENABLED=false EARLY_EXIT=true
 [[ "$(grep -c '^health-ready$' "$EVENTS" || true)" == 0 ]]
+[[ "$(grep -c '^health-fail$' "$EVENTS" || true)" -le 2 ]]
+run_case backend-fail fail TERM GARMIN_PERSONAL_API_ENABLED=false BACKEND_FAIL=true
+[[ "$(grep -c '^health-fail$' "$EVENTS" || true)" -le 2 ]]
 run_case health-timeout fail TERM GARMIN_PERSONAL_API_ENABLED=false HEALTH=fail
 [[ "$(grep -c '^health-fail$' "$EVENTS")" == 30 ]]
+[[ "$(grep -c '^health-sleep$' "$EVENTS")" == 29 ]]
+grep -q 'Backend healthcheck timed out after 60 seconds.' "$TMP_DIR/health-timeout.out"
+run_case health-at-deadline running TERM GARMIN_PERSONAL_API_ENABLED=false HEALTH=fail HEALTH_AFTER=30
+[[ "$(grep -c '^health-' "$EVENTS")" == 31 ]]
 
 # Missing, empty, and unreadable-syntax keys fail before Docker starts.
 cat > "$TMP_DIR/project/.env" <<'ENV'
@@ -134,6 +164,7 @@ ENV
 run_case missing fail TERM GARMIN_PERSONAL_API_ENABLED=true
 ! grep -q '^docker$' "$EVENTS"
 grep -qi 'key' "$TMP_DIR/missing.out"
+grep -q 'Garmin:        Enabled (key missing)' "$TMP_DIR/missing.out"
 printf "GARMIN_PERSONAL_API_KEY=''\n" > "$HOME/.config/sporttracker/garmin-poc.env"
 run_case empty fail TERM GARMIN_PERSONAL_API_ENABLED=true
 ! grep -q '^docker$' "$EVENTS"
