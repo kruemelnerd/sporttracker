@@ -16,8 +16,15 @@ printf 'docker\n' >> "$EVENTS"
 MOCK
 cat > "$TMP_DIR/project/backend/gradlew" <<'MOCK'
 #!/usr/bin/env python3
-import os, signal, sys
+import os, signal, subprocess, sys, time
 if sys.argv[1:] != ["--no-daemon", "bootRun"]: sys.exit(71)
+if os.environ.get("BACKEND_FAIL_WITH_CHILD"):
+    code = "import os,signal,sys; signal.signal(signal.SIGTERM, lambda *_: (open(os.environ['EVENTS'],'a').write('backend-child-stopped\\n'), sys.exit(0))); open(os.environ['EVENTS'],'a').write('backend-child-ready\\n'); signal.pause()"
+    subprocess.Popen([sys.executable, "-c", code])
+    for _ in range(100):
+        if "backend-child-ready" in open(os.environ["EVENTS"]).read(): break
+        time.sleep(0.01)
+    sys.exit(75)
 if os.environ.get("BACKEND_FAIL"): sys.exit(75)
 with open(os.environ["EVENTS"], "a") as f: f.write("backend:" + os.environ.get("GARMIN_PERSONAL_API_KEY", "") + "\n")
 open(os.environ["BACKEND_MARKER"], "w").close()
@@ -45,7 +52,7 @@ MOCK
 cat > "$TMP_DIR/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
 [[ " $* " == *' --connect-timeout 1 '* && " $* " == *' --max-time 1 '* && " $* " == *' http://127.0.0.1:8080/api/health '* ]] || exit 8
-health_count=$(($(grep -c '^health-' "$EVENTS" || true) + 1))
+health_count=$(($(grep -c '^health-fail$' "$EVENTS" || true) + 1))
 if grep -q '^backend:' "$EVENTS" && { [[ "${HEALTH:-ok}" == ok ]] || (( health_count >= ${HEALTH_AFTER:-999} )); }; then
   [[ -f "$BACKEND_MARKER" ]] || exit 7
   printf 'health-ready\n' >> "$EVENTS"
@@ -109,8 +116,10 @@ grep -q '^frontend$' "$EVENTS"
 backend_line=$(grep -n '^backend:' "$EVENTS" | cut -d: -f1)
 health_line=$(grep -n '^health-ready$' "$EVENTS" | cut -d: -f1)
 frontend_line=$(grep -n '^frontend$' "$EVENTS" | cut -d: -f1)
+last_health_sleep_line=$(grep -n '^health-sleep$' "$EVENTS" | tail -1 | cut -d: -f1 || true)
+last_health_sleep_line=${last_health_sleep_line:-0}
 (( backend_line < health_line && health_line < frontend_line ))
-[[ "$(grep -c '^health-sleep$' "$EVENTS" || true)" == 0 ]]
+(( last_health_sleep_line < health_line ))
 [[ "$(grep -c '^docker$' "$EVENTS" || true)" == 1 ]]
 grep -q 'PostgreSQL:    Ready' "$TMP_DIR/disabled.out"
 grep -q 'Backend:       Ready' "$TMP_DIR/disabled.out"
@@ -149,12 +158,16 @@ run_case early-exit fail TERM GARMIN_PERSONAL_API_ENABLED=false EARLY_EXIT=true
 [[ "$(grep -c '^health-fail$' "$EVENTS" || true)" -le 2 ]]
 run_case backend-fail fail TERM GARMIN_PERSONAL_API_ENABLED=false BACKEND_FAIL=true
 [[ "$(grep -c '^health-fail$' "$EVENTS" || true)" -le 2 ]]
+run_case backend-fail-child fail TERM GARMIN_PERSONAL_API_ENABLED=false BACKEND_FAIL_WITH_CHILD=true
+grep -q '^backend-child-stopped$' "$EVENTS"
 run_case health-timeout fail TERM GARMIN_PERSONAL_API_ENABLED=false HEALTH=fail
 [[ "$(grep -c '^health-fail$' "$EVENTS")" == 30 ]]
 [[ "$(grep -c '^health-sleep$' "$EVENTS")" == 29 ]]
 grep -q 'Backend healthcheck timed out after 60 seconds.' "$TMP_DIR/health-timeout.out"
 run_case health-at-deadline running TERM GARMIN_PERSONAL_API_ENABLED=false HEALTH=fail HEALTH_AFTER=30
-[[ "$(grep -c '^health-' "$EVENTS")" == 31 ]]
+[[ "$(grep -c '^health-fail$' "$EVENTS")" == 29 ]]
+[[ "$(grep -c '^health-ready$' "$EVENTS")" == 1 ]]
+[[ "$(grep -c '^health-sleep$' "$EVENTS")" == 29 ]]
 
 # Missing, empty, and unreadable-syntax keys fail before Docker starts.
 cat > "$TMP_DIR/project/.env" <<'ENV'
