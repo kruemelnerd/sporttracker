@@ -91,39 +91,34 @@ Weitere bereinigte Fehlerwerte sind `NOT_FOUND`, `RATE_LIMITED`, `REGISTRY_UNAVA
 
 ## Lokaler Start
 
-Optional `.env.example` nach `.env` kopieren und Werte anpassen. Die voreingestellten Zugangsdaten sind nur für die lokale Entwicklung gedacht.
+Optional `.env.example` nach `.env` kopieren; eine vorhandene `.env` nicht überschreiben. Die voreingestellten Zugangsdaten und `DATABASE_URL` zeigen auf die lokale Entwicklungsdatenbank `running_dashboard` auf Port `5432` und sind nur für die lokale Entwicklung gedacht. Für den Start mit `./dev.sh` die Integrationen in `.env` festlegen:
 
-1. PostgreSQL starten und Health prüfen:
+```dotenv
+GARMIN_PERSONAL_API_ENABLED=true
+INTERVALS_ICU_ENABLED=false
+```
 
-   ```bash
-   docker compose up -d db
-   docker compose ps
-   ```
+Wenn Garmin deaktiviert ist, wird keine Garmin-Key-Datei benötigt. Der Garmin-Key gehört **nicht** in `.env`: einmalig lokal in `~/.config/sporttracker/garmin-poc.env` hinterlegen, zum Beispiel:
 
-2. Backend starten (Flyway führt die Baseline beim Start aus):
+```bash
+install -d -m 700 ~/.config/sporttracker
+umask 077
+nano ~/.config/sporttracker/garmin-poc.env
+```
 
-   ```bash
-   cd backend
-   ./gradlew bootRun
-   ```
+In der Datei steht die Shell-Zuweisung `GARMIN_PERSONAL_API_KEY='…'`; Dateirechte auf `600` setzen (`chmod 600 ~/.config/sporttracker/garmin-poc.env`).
 
-3. In einem zweiten Terminal Frontend starten:
+`dev.sh` lädt den Key nur, wenn Garmin aktiviert ist, und reicht ihn ausschließlich an den Backend-Start weiter. Ein bereits gesetztes `GARMIN_PERSONAL_API_KEY` hat Vorrang.
 
-   ```bash
-   cd frontend
-   npm ci
-   npm run dev
-   ```
-
-Backend: `http://localhost:8080`. Frontend: `http://localhost:5173`. Das Frontend leitet `/api` über Vite an das Backend weiter.
-
-Beide Anwendungen samt PostgreSQL lassen sich auch gemeinsam starten:
+Die gesamte lokale Anwendung startet dann gemeinsam:
 
 ```bash
 ./dev.sh
 ```
 
 Mit `Ctrl-C` werden Backend und Frontend beendet; PostgreSQL bleibt gestartet und die Daten bleiben erhalten.
+
+Der Garmin-Importstatus lässt sich anschließend in der Importansicht prüfen. **Achtung:** Bei aktiviertem Garmin kann der Sync bereits beim Anwendungsstart automatisch anlaufen (ApplicationReady-Trigger), danach periodisch weiterlaufen. Vor einem Live-Test prüfen, dass `DATABASE_URL` auf die lokale Entwicklungsdatenbank `running_dashboard` zeigt; niemals dafür eine produktive Datenbank verwenden.
 
 ## Containerbetrieb
 

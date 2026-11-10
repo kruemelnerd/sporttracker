@@ -8,6 +8,19 @@ if [[ -f "$ROOT_DIR/.env" ]]; then
   source "$ROOT_DIR/.env"
   set +a
 fi
+
+GARMIN_KEY_FILE="$HOME/.config/sporttracker/garmin-poc.env"
+if [[ "${GARMIN_PERSONAL_API_ENABLED:-false}" == true && -z "${GARMIN_PERSONAL_API_KEY:-}" ]]; then
+  if [[ ! -r "$GARMIN_KEY_FILE" ]]; then
+    echo "Garmin ist aktiviert, aber GARMIN_PERSONAL_API_KEY fehlt und $GARMIN_KEY_FILE ist nicht lesbar." >&2
+    exit 1
+  fi
+  if ! (unset GARMIN_PERSONAL_API_KEY; source "$GARMIN_KEY_FILE" >/dev/null && [[ -n "${GARMIN_PERSONAL_API_KEY:-}" ]]); then
+    echo "Garmin ist aktiviert, aber $GARMIN_KEY_FILE enthält keinen lesbaren, nicht-leeren GARMIN_PERSONAL_API_KEY." >&2
+    exit 1
+  fi
+fi
+
 backend_pid=""
 frontend_pid=""
 
@@ -21,12 +34,20 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-docker compose -f "$ROOT_DIR/compose.yaml" up -d --wait db
+env -u GARMIN_PERSONAL_API_KEY docker compose -f "$ROOT_DIR/compose.yaml" up -d --wait db
 
-(cd "$ROOT_DIR/backend" && exec ./gradlew bootRun) &
+if [[ "${GARMIN_PERSONAL_API_ENABLED:-false}" == true && -z "${GARMIN_PERSONAL_API_KEY:-}" ]]; then
+  cd "$ROOT_DIR/backend"
+  bash -c 'source "$1" && export GARMIN_PERSONAL_API_KEY && exec ./gradlew bootRun' _ "$GARMIN_KEY_FILE" &
+else
+  cd "$ROOT_DIR/backend"
+  ./gradlew bootRun &
+fi
 backend_pid=$!
-(cd "$ROOT_DIR/frontend" && exec npm run dev) &
+cd "$ROOT_DIR/frontend"
+env -u GARMIN_PERSONAL_API_KEY npm run dev &
 frontend_pid=$!
+cd "$ROOT_DIR"
 
 echo "Backend:  http://localhost:8080"
 echo "Frontend: http://localhost:5173"
