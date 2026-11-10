@@ -20,3 +20,5 @@ running-dashboard:
   data-directory: /data
   intervals-icu:
     api-key: ${INTERVALS_ICU_API_KEY:}
+  garmin-personal-api:
+    api-key: ${GARMIN_PERSONAL_API_KEY:}

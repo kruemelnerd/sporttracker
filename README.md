@@ -91,33 +91,26 @@ Weitere bereinigte Fehlerwerte sind `NOT_FOUND`, `RATE_LIMITED`, `REGISTRY_UNAVA
 
 ## Lokaler Start
 
-Optional `.env.example` nach `.env` kopieren und Werte anpassen. Die voreingestellten Zugangsdaten sind nur für die lokale Entwicklung gedacht.
+Optional `.env.example` nach `.env` kopieren; eine vorhandene `.env` nicht überschreiben. Die voreingestellten Zugangsdaten und `DATABASE_URL` zeigen auf die lokale Entwicklungsdatenbank `running_dashboard` auf Port `5432` und sind nur für die lokale Entwicklung gedacht. Für den Start mit `./dev.sh` die Integrationen in `.env` festlegen:
 
-1. PostgreSQL starten und Health prüfen:
+```dotenv
+GARMIN_PERSONAL_API_ENABLED=true
+INTERVALS_ICU_ENABLED=false
+```
 
-   ```bash
-   docker compose up -d db
-   docker compose ps
-   ```
+Wenn Garmin deaktiviert ist, wird keine Garmin-Key-Datei benötigt. Der Garmin-Key gehört **nicht** in `.env`: einmalig lokal in `~/.config/sporttracker/garmin-poc.env` hinterlegen, zum Beispiel:
 
-2. Backend starten (Flyway führt die Baseline beim Start aus):
+```bash
+install -d -m 700 ~/.config/sporttracker
+umask 077
+nano ~/.config/sporttracker/garmin-poc.env
+```
 
-   ```bash
-   cd backend
-   ./gradlew bootRun
-   ```
+In der Datei steht die Shell-Zuweisung `GARMIN_PERSONAL_API_KEY='…'`; Dateirechte auf `600` setzen (`chmod 600 ~/.config/sporttracker/garmin-poc.env`).
 
-3. In einem zweiten Terminal Frontend starten:
+`dev.sh` lädt den Key nur, wenn Garmin aktiviert ist, und reicht ihn ausschließlich an den Backend-Start weiter. Ein bereits gesetztes `GARMIN_PERSONAL_API_KEY` hat Vorrang.
 
-   ```bash
-   cd frontend
-   npm ci
-   npm run dev
-   ```
-
-Backend: `http://localhost:8080`. Frontend: `http://localhost:5173`. Das Frontend leitet `/api` über Vite an das Backend weiter.
-
-Beide Anwendungen samt PostgreSQL lassen sich auch gemeinsam starten:
+Die gesamte lokale Anwendung startet dann gemeinsam:
 
 ```bash
 ./dev.sh
@@ -125,9 +118,45 @@ Beide Anwendungen samt PostgreSQL lassen sich auch gemeinsam starten:
 
 Mit `Ctrl-C` werden Backend und Frontend beendet; PostgreSQL bleibt gestartet und die Daten bleiben erhalten.
 
+Der Garmin-Importstatus lässt sich anschließend in der Importansicht prüfen. **Achtung:** Bei aktiviertem Garmin kann der Sync bereits beim Anwendungsstart automatisch anlaufen (ApplicationReady-Trigger), danach periodisch weiterlaufen. Vor einem Live-Test prüfen, dass `DATABASE_URL` auf die lokale Entwicklungsdatenbank `running_dashboard` zeigt; niemals dafür eine produktive Datenbank verwenden.
+
 ## Containerbetrieb
 
 Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie Backup und Restore siehe [docs/containerization.md](docs/containerization.md). Die schrittweise Linux-/VM-/LXC-Erstinstallation ist in [docs/proxmox-first-install.md](docs/proxmox-first-install.md) beschrieben; [docs/proxmox-deployment.md](docs/proxmox-deployment.md) ergänzt Architektur und verifizierten Deployment-Ablauf. Der lokale Entwicklungsstart über `./dev.sh` bleibt davon unabhängig.
+
+## Garmin Connect Personal API
+
+Garmin ist die primäre, optionale FIT-Datenquelle. Der Import verwendet ausschließlich die Garmin-Aktivitätssuche und das Original-FIT aus dem ZIP; Kennzahlen kommen weiterhin aus dem vorhandenen FIT-Parser. Garmin-JSON-Enrichment folgt erst in M9.2.2. Bereits vorhandene Läufe werden nicht überschrieben; Änderungen oder Löschungen auf Garmin entfernen keine lokalen Aktivitäten. Intervals.icu bleibt verfügbar, wird aber nicht parallel automatisch synchronisiert.
+
+1. Im Garmin Connect Personal API Bereich einen Personal API Key mit gewünschter Laufzeit erstellen.
+2. Den Key lokal außerhalb des Repositorys sicher ablegen, z. B. in `~/.config/sporttracker/garmin-personal-api-key` mit Dateirechten `0600`. Nicht in Git, Compose-Umgebungsdateien, Shell-Historie oder Build-Argumente schreiben.
+3. Für lokale Entwicklung den Key nur dem Backend-Prozess übergeben und Garmin aktivieren:
+
+   ```bash
+   cd backend
+   GARMIN_PERSONAL_API_ENABLED=true GARMIN_PERSONAL_API_KEY="$(<~/.config/sporttracker/garmin-personal-api-key)" ./gradlew bootRun
+   ```
+
+   Ohne `GARMIN_PERSONAL_API_ENABLED=true` bleibt Garmin deaktiviert. Standardmäßig sucht der Sync höchstens 20 Seiten à 50 Aktivitäten; Fensterinitialisierung: 90 Tage, anschließend 14 Tage überlappend. Interval, Seiten-/Response-Limits und Timeouts sind über `GARMIN_PERSONAL_API_*` konfigurierbar.
+4. Manuellen Lauf über **Import → Garmin Connect → Jetzt synchronisieren** starten oder `POST /api/imports/garmin/sync` aufrufen. `GET /api/imports/garmin/status` zeigt Konfiguration, bestätigte Verbindung, Laufstatus, letzte Ergebnisse und Rate-Limit-Sperre; weder API-Key noch Token werden zurückgegeben.
+5. Automatische Synchronisierung läuft nach aktiviertem Start und danach standardmäßig alle 30 Minuten. Ein fehlgeschlagenes/unvollständiges Fenster wird nicht als erfolgreich fortgeschrieben und bei späterem Lauf erneut geprüft.
+
+### Garmin im Docker-Compose-Betrieb
+
+Das Basis-Compose bleibt unverändert und Garmin deaktiviert. Für eine spätere, manuelle Aktivierung (nicht Teil dieses Changes und kein Deployment) die Key-Datei außerhalb des Repositorys bereitstellen, mit den für den App-Container passenden restriktiven Rechten, und zusätzlich `compose.production.garmin.yaml` einbinden:
+
+```bash
+export GARMIN_PERSONAL_API_KEY_FILE=/secure/path/garmin-personal-api-key
+docker compose -f compose.production.yaml -f compose.production.garmin.yaml config --quiet
+```
+
+Der Override reicht den Key ausschließlich als Docker-Compose-Secret mit dem Namen `GARMIN_PERSONAL_API_KEY` ein; Spring Boot liest die Datei über den vorhandenen `configtree:/run/secrets/`-Import. Er aktiviert Intervals.icu nicht. Compose-Konfiguration prüfen, aber Garmin erst nach bewusster späterer Betriebsfreigabe starten. Der reguläre Updateprozess wird dadurch nicht geändert.
+
+### Fehlerbehandlung und Einschränkungen
+
+Ungültige/abgelaufene Keys, Zugriffssperren, fehlende Dateien, fehlerhafte Antworten, Netzwerkfehler, zu große Antworten/ZIPs und beschädigte FITs werden mit bereinigten Fehlercodes angezeigt. HTTP 429 beachtet `Retry-After` (begrenzt) und pausiert weitere Anfragen. Garmin-Quoten, historische Verfügbarkeit und Änderungen/Löschungen sind nicht verlässlich dokumentiert. Mehrere FIT-Dateien im ZIP oder mehrdeutige lokale Duplikate werden nicht automatisch ausgewählt/verknüpft.
+
+Bestehende Werte werden nicht durch Garmin-JSON ersetzt; insbesondere Bewegungsdauer und Kadenz stammen weiter aus FIT. M9.2.1 führt keine automatische Aktualisierung, produktive Aktivierung oder Bereitstellung aus.
 
 ## Intervals.icu
 
@@ -140,7 +169,7 @@ Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie 
    export INTERVALS_ICU_ENABLED=true
    ```
 
-4. Das Backend starten. Der API-Key bleibt ausschließlich im Backend; der Sync läuft einseitig von Intervals.icu in die lokale Anwendung.
+4. Das Backend starten. Der API-Key bleibt ausschließlich im Backend; der Sync läuft einseitig von Intervals.icu in die lokale Anwendung. Wenn Garmin und Intervals.icu beide für Automatik aktiviert sind, bleibt Garmin primär und die Intervals.icu-Automatik wird sichtbar pausiert. Manueller Intervals.icu-Sync bleibt verfügbar.
 
 ## Versionsanzeige im PACEBASE-Footer
 

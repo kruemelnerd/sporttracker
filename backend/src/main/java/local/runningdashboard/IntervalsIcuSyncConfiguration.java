@@ -17,4 +17,14 @@ public class IntervalsIcuSyncConfiguration {
         executor.setThreadNamePrefix("intervals-icu-sync-");
         return executor;
     }
+
+    @Bean("garminSyncExecutor")
+    ThreadPoolTaskExecutor garminSyncExecutor() {
+        var executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(0);
+        executor.setThreadNamePrefix("garmin-sync-");
+        return executor;
+    }
 }

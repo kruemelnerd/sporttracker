@@ -1,0 +1,12 @@
+services:
+  app:
+    environment:
+      GARMIN_PERSONAL_API_ENABLED: "true"
+      INTERVALS_ICU_ENABLED: "false"
+    secrets:
+      - source: garmin_personal_api_key
+        target: GARMIN_PERSONAL_API_KEY
+
+secrets:
+  garmin_personal_api_key:
+    file: ${GARMIN_PERSONAL_API_KEY_FILE:?Set path to the Garmin Personal API key file}

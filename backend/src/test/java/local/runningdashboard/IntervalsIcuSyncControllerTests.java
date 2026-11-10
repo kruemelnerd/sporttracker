@@ -57,7 +57,11 @@ class IntervalsIcuSyncControllerTests {
         };
         var properties = new IntervalsIcuProperties(true, "secret-must-not-be-returned", "http://localhost:1", Duration.ofMinutes(15), 90);
         var sync = new IntervalsIcuSyncService(source, imports, mappings, properties, Clock.fixed(Instant.parse("2026-10-19T10:00:00Z"), ZoneOffset.UTC));
-        var mvc = MockMvcBuilders.standaloneSetup(new IntervalsIcuSyncController(sync, new SyncTaskExecutor())).build();
+        var executor = new SyncTaskExecutor();
+        var garmin = new GarminPersonalApiProperties(false, "", "https://personal.connectapi.garmin.com",
+                Duration.ofMinutes(30), 90, 50, 20, 52_428_800, Duration.ofSeconds(5), Duration.ofSeconds(30));
+        var triggers = new IntervalsIcuSyncTriggers(sync, executor, garmin);
+        var mvc = MockMvcBuilders.standaloneSetup(new IntervalsIcuSyncController(sync, executor, triggers)).build();
 
         var response = mvc.perform(post("/api/imports/intervals-icu/sync"))
                 .andExpect(status().isAccepted())

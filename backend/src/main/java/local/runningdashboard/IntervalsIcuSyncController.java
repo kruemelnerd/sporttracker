@@ -17,11 +17,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class IntervalsIcuSyncController {
     private final IntervalsIcuSyncService sync;
     private final TaskExecutor executor;
+    private final IntervalsIcuSyncTriggers triggers;
 
     public IntervalsIcuSyncController(IntervalsIcuSyncService sync,
-                                      @Qualifier("intervalsIcuSyncExecutor") TaskExecutor executor) {
+                                      @Qualifier("intervalsIcuSyncExecutor") TaskExecutor executor,
+                                      IntervalsIcuSyncTriggers triggers) {
         this.sync = sync;
         this.executor = executor;
+        this.triggers = triggers;
     }
 
     @GetMapping("/status")
@@ -39,10 +42,10 @@ public class IntervalsIcuSyncController {
 
     private SyncStatus currentStatus(String message) {
         return new SyncStatus(sync.configured(), sync.running(), sync.lastSuccessfulSyncAt(), sync.lastAttemptAt(),
-                sync.retryAfterUntil(), sync.lastResult(), message);
+                sync.retryAfterUntil(), sync.lastResult(), triggers.automaticSyncSuppressed(), message);
     }
 
     public record SyncStatus(boolean configured, boolean running, Instant lastSuccessfulSyncAt,
                              Instant lastAttemptAt, Instant retryAfterUntil,
-                             IntervalsIcuSyncService.SyncResult lastResult, String message) { }
+                             IntervalsIcuSyncService.SyncResult lastResult, boolean automaticSyncSuppressed, String message) { }
 }

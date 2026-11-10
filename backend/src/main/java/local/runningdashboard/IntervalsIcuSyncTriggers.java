@@ -13,11 +13,14 @@ import org.springframework.stereotype.Component;
 public class IntervalsIcuSyncTriggers {
     private final IntervalsIcuSyncService sync;
     private final TaskExecutor executor;
+    private final GarminPersonalApiProperties garmin;
 
     public IntervalsIcuSyncTriggers(IntervalsIcuSyncService sync,
-                                    @Qualifier("intervalsIcuSyncExecutor") TaskExecutor executor) {
+                                    @Qualifier("intervalsIcuSyncExecutor") TaskExecutor executor,
+                                    GarminPersonalApiProperties garmin) {
         this.sync = sync;
         this.executor = executor;
+        this.garmin = garmin;
     }
 
     @EventListener(ApplicationReadyEvent.class)
@@ -27,6 +30,8 @@ public class IntervalsIcuSyncTriggers {
     public void onSchedule() { trigger(); }
 
     private void trigger() {
-        if (sync.configured()) sync.startAsync(executor);
+        if (sync.configured() && !automaticSyncSuppressed()) sync.startAsync(executor);
     }
+
+    public boolean automaticSyncSuppressed() { return garmin.configured() && sync.configured(); }
 }
