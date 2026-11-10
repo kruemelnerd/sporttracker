@@ -49,7 +49,7 @@ public class GarminPersonalApiClient {
             if (root.size() > properties.pageSize()) throw new GarminClientException("INVALID_RESPONSE");
             for (JsonNode item : root) {
                 JsonNode id = item.path("activityId");
-                JsonNode type = item.path("activityTypeDTO").path("typeKey");
+                JsonNode type = item.path("activityType").path("typeKey");
                 if (!id.canConvertToLong() || id.asLong() < 1 || !type.isTextual()) {
                     throw new GarminClientException("INVALID_RESPONSE");
                 }

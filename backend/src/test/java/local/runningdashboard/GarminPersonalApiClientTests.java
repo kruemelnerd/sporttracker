@@ -34,8 +34,8 @@ class GarminPersonalApiClientTests {
             assertTrue(query.contains("startDate=2026-01-01"));
             assertTrue(query.contains("endDate=2026-01-31"));
             if (query.contains("start=0")) respond(exchange, 200,
-                    "[{\"activityId\":12,\"activityTypeDTO\":{\"typeKey\":\"running\"}},{\"activityId\":13,\"activityTypeDTO\":{\"typeKey\":\"trail_running\"}}]");
-            else respond(exchange, 200, "[{\"activityId\":14,\"activityTypeDTO\":{\"typeKey\":\"virtual_run\"}}]");
+                    "[{\"activityId\":101,\"activityType\":{\"typeKey\":\"running\"}},{\"activityId\":102,\"activityType\":{\"typeKey\":\"trail_running\"}}]");
+            else respond(exchange, 200, "[{\"activityId\":103,\"activityType\":{\"typeKey\":\"virtual_run\"}}]");
         });
         server.start();
         var client = client(2, 3);
@@ -51,11 +51,25 @@ class GarminPersonalApiClientTests {
     }
 
     @Test
+    void rejectsTheObsoleteActivityTypeDtoShape() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/personalapitoken-service/personal-api/personal-api-key/token", exchange -> respond(exchange, 200, "token"));
+        server.createContext("/activitylist-service/activities/search/activities", exchange -> respond(exchange, 200,
+                "[{\"activityId\":101,\"activityTypeDTO\":{\"typeKey\":\"running\"}}]"));
+        server.start();
+
+        var failure = assertThrows(GarminClientException.class,
+                () -> client(10, 2).listActivities(LocalDate.MIN, LocalDate.MAX));
+
+        assertEquals("INVALID_RESPONSE", failure.code());
+    }
+
+    @Test
     void rejectsSearchWindowWhenPageLimitMayHaveTruncatedResults() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/personalapitoken-service/personal-api/personal-api-key/token", exchange -> respond(exchange, 200, "token"));
         server.createContext("/activitylist-service/activities/search/activities", exchange -> respond(exchange, 200,
-                "[{\"activityId\":12,\"activityTypeDTO\":{\"typeKey\":\"running\"}}]"));
+                "[{\"activityId\":12,\"activityType\":{\"typeKey\":\"running\"}}]"));
         server.start();
         var client = client(1, 1);
 
