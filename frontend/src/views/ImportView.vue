@@ -24,7 +24,7 @@
       <p v-if="garminStatus?.automaticSyncSuppressed" class="intervals-hint" role="status">Intervals.icu-Automatik ist deaktiviert, solange Garmin als primäre Auto-Quelle aktiviert ist.</p>
       <p v-if="garminStatus?.retryAfterUntil" class="sync-time">Erneuter Versuch möglich ab {{ formatSyncTime(garminStatus.retryAfterUntil) }}</p>
       <button class="start-button" data-testid="garmin-sync" type="button"
-        :disabled="!garminStatus?.configured || garminStatus.running || garminSubmitting || isGarminRateLimited"
+        :disabled="!garminStatus?.configured || garminStatus.running || garminSubmitting || isGarminRateLimited || managementBusy"
         @click="syncGarmin">Jetzt synchronisieren</button>
     </section>
     <section class="intervals-card" aria-labelledby="intervals-title" data-testid="intervals-card">
@@ -54,7 +54,7 @@
       <p v-if="intervalsError" class="intervals-error" data-testid="intervals-error" role="alert">{{ intervalsError }}</p>
       <p v-if="intervalsStatus?.retryAfterUntil" class="sync-time">Erneuter Versuch möglich ab {{ formatSyncTime(intervalsStatus.retryAfterUntil) }}</p>
       <button class="start-button" data-testid="intervals-sync" type="button"
-        :disabled="!intervalsStatus?.configured || intervalsStatus.running || intervalsSubmitting || isRateLimited"
+        :disabled="!intervalsStatus?.configured || intervalsStatus.running || intervalsSubmitting || isRateLimited || managementBusy"
         @click="syncIntervals">Jetzt synchronisieren</button>
     </section>
     <section class="upload-panel" aria-labelledby="upload-title">
@@ -78,9 +78,51 @@
       <p v-if="selected.length" data-testid="selection-count" role="status" aria-live="polite">
         {{ selected.length }} {{ selected.length === 1 ? 'Datei' : 'Dateien' }} ausgewählt
       </p>
-      <button class="start-button" data-testid="start-import" type="button" :disabled="!selected.length" @click="startImport">
+      <button class="start-button" data-testid="start-import" type="button" :disabled="!selected.length || managementBusy" @click="startImport">
         Import starten
       </button>
+    </section>
+    <section v-if="managementStatus?.enabled" class="intervals-card management-card" aria-labelledby="management-title" data-testid="data-management">
+      <div class="intervals-heading">
+        <div><h2 id="management-title">Daten verwalten</h2><p>Destruktive Änderungen erst nach aktueller Vorschau und ausdrücklicher Bestätigung.</p></div>
+        <span class="connection-status" role="status">{{ managementStatus.pendingFileDeletions }} Dateibereinigungen ausstehend</span>
+      </div>
+      <p v-if="managementError" class="intervals-error" role="alert" data-testid="management-error">{{ managementError }}</p>
+      <div class="management-actions" aria-label="Löschaktionen">
+        <button v-for="item in deletionActions" :key="item.action" class="retry-button" :data-testid="`delete-${item.action}`"
+          type="button" :disabled="managementBusy || externalBusy" @click="previewDeletion(item.action)">{{ item.label }}</button>
+      </div>
+      <p v-if="managementStatus.garminPaused" class="intervals-hint" role="status">
+        Garmin-Synchronisierung ist dauerhaft pausiert.
+        <button class="text-button" data-testid="resume-GARMIN" type="button" :disabled="managementBusy" @click="resumeSync('GARMIN')">Garmin ausdrücklich wieder freigeben</button>
+      </p>
+      <p v-if="managementStatus.intervalsPaused" class="intervals-hint" role="status">
+        Intervals.icu-Synchronisierung ist dauerhaft pausiert.
+        <button class="text-button" data-testid="resume-INTERVALS_ICU" type="button" :disabled="managementBusy" @click="resumeSync('INTERVALS_ICU')">Intervals.icu ausdrücklich wieder freigeben</button>
+      </p>
+      <section v-if="deletionPreview" class="management-preview" aria-label="Löschvorschau" data-testid="delete-preview" aria-live="polite">
+        <h3>{{ actionLabel(deletionPreview.action) }} – Vorschau</h3>
+        <p>{{ deletionPreview.deletableActivities }} wird{{ deletionPreview.deletableActivities === 1 ? '' : 'en' }} gelöscht · {{ deletionPreview.protectedActivities }} geschützt</p>
+        <p>{{ deletionPreview.ambiguousActivities }} mehrdeutig · {{ deletionPreview.sourceAssociations }} Quellzuordnungen · {{ deletionPreview.records }} Records · {{ deletionPreview.laps }} Runden · {{ deletionPreview.importFiles }} Importdateien</p>
+        <p v-if="deletionPreview.trainingPlans">{{ deletionPreview.trainingPlans }} Trainingspläne, {{ deletionPreview.trainingPhases }} Phasen und {{ deletionPreview.plannedSessions }} Einheiten betroffen</p>
+        <p>{{ deletionPreview.preservedData }}</p>
+        <p class="intervals-error">Dieser Vorgang ist nicht rückgängig zu machen. Erstelle vorher ein Backup.</p>
+        <label class="phrase-field">Zur Bestätigung <strong>{{ phraseFor(deletionPreview.action) }}</strong>
+          <input data-testid="delete-phrase" v-model="confirmationPhrase" autocomplete="off" :disabled="managementBusy" :aria-label="`Bestätigungsphrase ${phraseFor(deletionPreview.action)}`" />
+        </label>
+        <div class="management-actions">
+          <button class="start-button" data-testid="delete-confirm" type="button"
+            :disabled="confirmationPhrase !== phraseFor(deletionPreview.action) || managementBusy || externalBusy" @click="confirmDeletion">Bestätigen und löschen</button>
+          <button class="retry-button" type="button" :disabled="managementBusy" @click="cancelDeletion">Abbrechen</button>
+        </div>
+      </section>
+      <section v-if="deletionResult" class="intervals-result" data-testid="delete-result" aria-live="polite">
+        <h3>Ergebnis: {{ actionLabel(deletionResult.action) }}</h3>
+        <p>{{ deletionResult.activitiesDeleted }} {{ deletionResult.activitiesDeleted === 1 ? 'Aktivität' : 'Aktivitäten' }} gelöscht · {{ deletionResult.activitiesProtected }} geschützt · {{ deletionResult.sourceAssociationsDeleted }} Quellzuordnungen entfernt</p>
+        <p>{{ deletionResult.recordsDeleted }} Records · {{ deletionResult.lapsDeleted }} Runden · {{ deletionResult.importFilesDeleted }} Importdateien gelöscht</p>
+        <p v-if="deletionResult.trainingPlansDeleted">{{ deletionResult.trainingPlansDeleted }} Trainingspläne · {{ deletionResult.trainingPhasesDeleted }} Phasen · {{ deletionResult.plannedSessionsDeleted }} Einheiten entfernt</p>
+        <p v-if="deletionResult.filesPending || deletionResult.filesFailed" class="intervals-error" role="alert">Dateibereinigung: {{ deletionResult.filesPending }} ausstehend, {{ deletionResult.filesFailed }} fehlgeschlagen. Sie wird später erneut versucht.</p>
+      </section>
     </section>
     <p v-if="batchError" data-testid="batch-error" role="alert">{{ batchError.message }}</p>
     <section v-if="queue.length" aria-labelledby="queue-title">
@@ -100,7 +142,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { getGarminStatus, getIntervalsIcuStatus, importFits, startGarminSync, startIntervalsIcuSync, type GarminStatus, type ImportBatchError, type ImportOutcome, type IntervalsIcuStatus } from '../api'
+import { confirmDataDeletion, getDataManagementStatus, getGarminStatus, getIntervalsIcuStatus, importFits, previewDataDeletion, resumeDataSync, startGarminSync, startIntervalsIcuSync, type DataDeletionPreview, type DataDeletionResult, type DataManagementAction, type DataManagementStatus, type GarminStatus, type ImportBatchError, type ImportOutcome, type IntervalsIcuStatus } from '../api'
 import ImportOutcomeBadge from '../components/ImportOutcomeBadge.vue'
 
 type QueueState = 'PENDING' | 'PROCESSING' | ImportOutcome['status']
@@ -119,6 +161,21 @@ const garminStatus = ref<GarminStatus | null>(null)
 const garminLoading = ref(true)
 const garminSubmitting = ref(false)
 const garminError = ref('')
+const managementStatus = ref<DataManagementStatus | null>(null)
+const managementError = ref('')
+const managementBusy = ref(false)
+const activeUpload = ref(false)
+const deletionPreview = ref<DataDeletionPreview | null>(null)
+const deletionResult = ref<DataDeletionResult | null>(null)
+const confirmationPhrase = ref('')
+const deletionActions: { action: DataManagementAction; label: string }[] = [
+  { action: 'DELETE_GARMIN', label: 'Garmin-Daten löschen' },
+  { action: 'DELETE_INTERVALS_ICU', label: 'Intervals.icu-Daten löschen' },
+  { action: 'DELETE_ACTIVITIES', label: 'Alle Aktivitäten löschen' },
+  { action: 'RESET_APPLICATION_DATA', label: 'Alle Anwendungsdaten zurücksetzen' },
+]
+const externalBusy = computed(() => activeUpload.value || garminSubmitting.value || intervalsSubmitting.value
+  || !!garminStatus.value?.running || !!intervalsStatus.value?.running)
 let intervalsPoll: number | undefined
 let garminPoll: number | undefined
 let nextId = 1
@@ -127,6 +184,54 @@ const isOutcome = (state: QueueState): state is ImportOutcome['status'] =>
 
 const isRateLimited = computed(() => !!intervalsStatus.value?.retryAfterUntil && Date.parse(intervalsStatus.value.retryAfterUntil) > Date.now())
 const isGarminRateLimited = computed(() => !!garminStatus.value?.retryAfterUntil && Date.parse(garminStatus.value.retryAfterUntil) > Date.now())
+
+const phrases: Record<DataManagementAction, string> = {
+  DELETE_GARMIN: 'GARMIN LÖSCHEN',
+  DELETE_INTERVALS_ICU: 'INTERVALS. ICU LÖSCHEN',
+  DELETE_ACTIVITIES: 'ALLE AKTIVITÄTEN LÖSCHEN',
+  RESET_APPLICATION_DATA: 'ALLE ANWENDUNGSDATEN LÖSCHEN',
+}
+function phraseFor(action: DataManagementAction) { return phrases[action] }
+function actionLabel(action: DataManagementAction) { return deletionActions.find((item) => item.action === action)?.label ?? action }
+
+async function loadManagementStatus() {
+  try { managementStatus.value = await getDataManagementStatus() }
+  catch { managementStatus.value = null }
+}
+
+async function previewDeletion(action: DataManagementAction) {
+  managementBusy.value = true
+  managementError.value = ''
+  deletionResult.value = null
+  confirmationPhrase.value = ''
+  try { deletionPreview.value = await previewDataDeletion(action) }
+  catch (error) { managementError.value = error instanceof Error ? error.message : 'Vorschau konnte nicht geladen werden.' }
+  finally { managementBusy.value = false }
+}
+
+async function confirmDeletion() {
+  const preview = deletionPreview.value
+  if (!preview || confirmationPhrase.value !== phraseFor(preview.action) || externalBusy.value || managementBusy.value) return
+  managementBusy.value = true
+  managementError.value = ''
+  try {
+    deletionResult.value = await confirmDataDeletion(preview.action, preview.token, confirmationPhrase.value)
+    deletionPreview.value = null
+    confirmationPhrase.value = ''
+    await Promise.all([loadManagementStatus(), loadGarminStatus(), loadIntervalsStatus()])
+  } catch (error) { managementError.value = error instanceof Error ? error.message : 'Löschen fehlgeschlagen.' }
+  finally { managementBusy.value = false }
+}
+
+function cancelDeletion() { deletionPreview.value = null; confirmationPhrase.value = ''; managementError.value = '' }
+
+async function resumeSync(provider: 'GARMIN' | 'INTERVALS_ICU') {
+  managementBusy.value = true
+  managementError.value = ''
+  try { await resumeDataSync(provider); await loadManagementStatus() }
+  catch (error) { managementError.value = error instanceof Error ? error.message : 'Synchronisierung konnte nicht freigegeben werden.' }
+  finally { managementBusy.value = false }
+}
 
 function formatSyncTime(value: string) {
   return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value))
@@ -198,7 +303,7 @@ async function syncGarmin() {
   finally { garminSubmitting.value = false; pollGarmin() }
 }
 
-onMounted(() => { void loadIntervalsStatus(); void loadGarminStatus() })
+onMounted(() => { void loadIntervalsStatus(); void loadGarminStatus(); void loadManagementStatus() })
 onBeforeUnmount(() => {
   if (intervalsPoll !== undefined) window.clearTimeout(intervalsPoll)
   if (garminPoll !== undefined) window.clearTimeout(garminPoll)
@@ -230,6 +335,7 @@ function startImport() {
 }
 
 async function upload(items: QueueItem[]) {
+  activeUpload.value = true
   items.forEach((item) => { item.state = 'PROCESSING'; item.message = 'Import wird verarbeitet …' })
   batchError.value = null
   try {
@@ -243,6 +349,8 @@ async function upload(items: QueueItem[]) {
     items.forEach((item, index) => applyOutcome(item, result.outcomes[index]))
   } catch {
     items.forEach((item) => { item.state = 'FAILED'; item.message = 'Import fehlgeschlagen. Erneut versuchen.' })
+  } finally {
+    activeUpload.value = false
   }
 }
 
@@ -285,6 +393,13 @@ async function retry(item: QueueItem) {
 .intervals-activity-results { display: grid; gap: .35rem; margin: .5rem 0 0; padding-left: 1.25rem; color: var(--color-muted); font-size: .875rem; }
 .intervals-activity-results .failed, .intervals-error { color: var(--color-danger, #a12622); }
 .intervals-error { margin: 0; font-size: .9rem; }
+.management-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.management-preview { display: grid; gap: .5rem; padding: 1rem; background: var(--color-canvas); border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.management-preview h3, .management-preview p, .intervals-result h3 { margin: 0; }
+.phrase-field { display: grid; gap: .5rem; }
+.phrase-field input { width: 100%; min-height: 44px; padding: .625rem .75rem; color: var(--color-ink); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-control); }
+.text-button { min-height: 40px; margin-left: .5rem; padding: .35rem .65rem; color: var(--color-accent-strong); background: transparent; border: 1px solid var(--color-border); border-radius: var(--radius-control); cursor: pointer; }
+.text-button:disabled { opacity: .55; cursor: not-allowed; }
 .page-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .page-heading h1 { margin: 0; color: var(--color-ink); font-size: clamp(1.5rem, 3vw, 2rem); line-height: 1.2; }
 .page-heading p { margin: .5rem 0 0; color: var(--color-muted); }

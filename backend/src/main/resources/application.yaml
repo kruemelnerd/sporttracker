@@ -20,6 +20,8 @@ server:
 running-dashboard:
   display-timezone: ${DISPLAY_TIMEZONE:Europe/Berlin}
   data-directory: ${DATA_DIRECTORY:./data}
+  data-management:
+    enabled: ${DATA_DELETION_ENABLED:false}
   import:
     enabled: true
     max-batch-count: ${IMPORT_MAX_BATCH_COUNT:10}
