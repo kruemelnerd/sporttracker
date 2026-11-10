@@ -90,6 +90,7 @@ class ImportControllerTests {
                 .andExpect(jsonPath("$[?(@.id == " + activityId + ")].distanceMeters").value(org.hamcrest.Matchers.contains(5000d)));
 
         jdbc.update("UPDATE activity_record SET altitude_meters = NULL WHERE activity_id = ?", activityId);
+        jdbc.update("UPDATE activity SET garmin_training_effect = 0, garmin_anaerobic_training_effect = 2.5, garmin_activity_training_load = 150 WHERE id = ?", activityId);
 
         mockMvc.perform(get("/api/activities/{id}", activityId))
                 .andExpect(status().isOk())
@@ -98,6 +99,9 @@ class ImportControllerTests {
                 .andExpect(jsonPath("$.records[0].heartRate").value(140))
                 .andExpect(jsonPath("$.records[0].elapsedSeconds").value(0d))
                 .andExpect(jsonPath("$.records[0].altitudeMeters").value(10d))
+                .andExpect(jsonPath("$.garminTrainingMetrics.aerobicTrainingEffect").value(0d))
+                .andExpect(jsonPath("$.garminTrainingMetrics.anaerobicTrainingEffect").value(2.5d))
+                .andExpect(jsonPath("$.garminTrainingMetrics.trainingLoad").value(150d))
                 .andExpect(jsonPath("$.laps.length()").value(1));
         assertEquals(10d, jdbc.queryForObject("SELECT altitude_meters FROM activity_record WHERE activity_id = ? AND record_index = 0", Double.class, activityId));
     }

@@ -33,4 +33,8 @@ public class GarminActivityImportSource implements ActivityImportSource {
         byte[] fit = extractor.extract(archive.body());
         return new ActivityFile(fit, "application/octet-stream", null);
     }
+
+    @Override public GarminPersonalApiClient.TrainingMetrics fetchTrainingMetrics(String externalId) {
+        return client.activityTrainingMetrics(externalId);
+    }
 }

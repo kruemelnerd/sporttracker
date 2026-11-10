@@ -18,6 +18,15 @@
         <MetricCard label="Kalorien" :value="detail.calories === null ? '–' : `${detail.calories} kcal`" />
       </dl>
 
+      <section v-if="garminMetricsPresent" class="detail-panel" aria-labelledby="garmin-training-heading" data-testid="garmin-training-metrics">
+        <h2 id="garmin-training-heading">Trainingsanalyse</h2>
+        <dl class="metrics training-metrics">
+          <MetricCard v-if="detail.garminTrainingMetrics.aerobicTrainingEffect !== null" label="Aerober Training Effect" :value="garminValue(detail.garminTrainingMetrics.aerobicTrainingEffect)" />
+          <MetricCard v-if="detail.garminTrainingMetrics.anaerobicTrainingEffect !== null" label="Anaerober Training Effect" :value="garminValue(detail.garminTrainingMetrics.anaerobicTrainingEffect)" />
+          <MetricCard v-if="detail.garminTrainingMetrics.trainingLoad !== null" label="Trainingsbelastung" :value="garminValue(detail.garminTrainingMetrics.trainingLoad)" />
+        </dl>
+      </section>
+
       <section class="detail-panel" aria-labelledby="map-heading">
         <h2 id="map-heading">Laufstrecke</h2>
         <div v-if="routeVisible" ref="mapElement" class="map" aria-label="Karte mit GPS-Track"></div>
@@ -97,6 +106,7 @@ const descent = computed(() => {
   if (detail.value?.laps.length && detail.value.laps.every((lap) => lap.descentMeters !== null)) return detail.value.laps.reduce((sum, lap) => sum + lap.descentMeters!, 0)
   return descendedMeters(detail.value?.records ?? [])
 })
+const garminMetricsPresent = computed(() => Object.values(detail.value?.garminTrainingMetrics ?? {}).some((value) => value !== null))
 
 const distance = (meters: number | null) => meters === null ? '–' : `${(meters / 1000).toFixed(2)} km`
 const duration = (seconds: number | null) => {
@@ -106,6 +116,7 @@ const duration = (seconds: number | null) => {
 }
 const meters = (value: number | null) => value === null ? '–' : `${Math.round(value)} m`
 const bpm = (value: number | null) => value === null ? '–' : `${value} bpm`
+const garminValue = (value: number) => new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(value)
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' }).format(new Date(value))
 
 async function loadActivity(id: string) {

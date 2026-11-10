@@ -126,7 +126,7 @@ Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie 
 
 ## Garmin Connect Personal API
 
-Garmin ist die primäre, optionale FIT-Datenquelle. Der Import verwendet ausschließlich die Garmin-Aktivitätssuche und das Original-FIT aus dem ZIP; Kennzahlen kommen weiterhin aus dem vorhandenen FIT-Parser. Garmin-JSON-Enrichment folgt erst in M9.2.2. Bereits vorhandene Läufe werden nicht überschrieben; Änderungen oder Löschungen auf Garmin entfernen keine lokalen Aktivitäten. Intervals.icu bleibt verfügbar, wird aber nicht parallel automatisch synchronisiert.
+Garmin ist die primäre, optionale FIT-Datenquelle. Distanz, Dauer, Pace/Geschwindigkeit, Herzfrequenz, GPS, Höhenmeter, Runden/Splits und Zeitreihen stammen weiterhin ausschließlich aus dem vorhandenen FIT-Parser. Beim Import neuer Garmin-Aktivitäten ergänzt die Activity-Detail-API (`summaryDTO`) drei davon getrennte Werte: `trainingEffect` (Aerobic Training Effect, Garmin-Skala 0–5), `anaerobicTrainingEffect` (anaerobe Garmin-Skala 0–5) und `activityTrainingLoad` (Garmin-Trainingsbelastungswert, dimensionsloser Garmin-Wert). Die Zahlen werden nicht umgerechnet; ungültige/fehlende Werte bleiben `null`. Vorhandene FIT-Messwerte werden nicht ersetzt.
 
 1. Im Garmin Connect Personal API Bereich einen Personal API Key mit gewünschter Laufzeit erstellen.
 2. Den Key lokal außerhalb des Repositorys sicher ablegen, z. B. in `~/.config/sporttracker/garmin-personal-api-key` mit Dateirechten `0600`. Nicht in Git, Compose-Umgebungsdateien, Shell-Historie oder Build-Argumente schreiben.
@@ -156,7 +156,9 @@ Der Override reicht den Key ausschließlich als Docker-Compose-Secret mit dem Na
 
 Ungültige/abgelaufene Keys, Zugriffssperren, fehlende Dateien, fehlerhafte Antworten, Netzwerkfehler, zu große Antworten/ZIPs und beschädigte FITs werden mit bereinigten Fehlercodes angezeigt. HTTP 429 beachtet `Retry-After` (begrenzt) und pausiert weitere Anfragen. Garmin-Quoten, historische Verfügbarkeit und Änderungen/Löschungen sind nicht verlässlich dokumentiert. Mehrere FIT-Dateien im ZIP oder mehrdeutige lokale Duplikate werden nicht automatisch ausgewählt/verknüpft.
 
-Bestehende Werte werden nicht durch Garmin-JSON ersetzt; insbesondere Bewegungsdauer und Kadenz stammen weiter aus FIT. M9.2.1 führt keine automatische Aktualisierung, produktive Aktivierung oder Bereitstellung aus.
+Kann die Detail-API nach erfolgreichem FIT-Import nicht gelesen werden, bleiben FIT-Datei und Garmin-Zuordnung erhalten. Der Sync zeigt einen Teilfehler (`GARMIN_ENRICHMENT_FAILED`) und markiert diesen Import dauerhaft als unvollständig; spätere Syncs melden den Teilfehler erneut, ohne einen historischen JSON-Nachimport zu starten. Fehlende optionale Kennzahlen bleiben `null`; auch echte Nullwerte bleiben erhalten.
+
+Nicht implementiert sind VO₂max, Bodenkontaktzeit, vertikale Bewegung, Schrittlänge und Schrittanzahl: Verfügbarkeit, eindeutiges Feld-Mapping, Einheiten oder Bedeutung waren anhand der dokumentierten Antworten nicht ausreichend bestätigt. Es gibt keinen historischen Backfill, keinen manuellen Enrichment-Button und keine Anreicherung vorhandener Aktivitäten. Eine vollständige Neusynchronisation ist erst nach Integration der separaten Datenverwaltungs-/Löschfunktion und einer bewussten Benutzeraktion vorgesehen. M9.2.2 löscht keine Aktivitäten und aktiviert oder deployt Garmin nicht.
 
 ## Intervals.icu
 
