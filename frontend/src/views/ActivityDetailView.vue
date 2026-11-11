@@ -5,17 +5,28 @@
     <p v-else-if="error" role="alert">{{ error }}</p>
     <template v-if="detail && !loading && !error">
       <header class="detail-heading">
-        <h1>{{ date(detail.activity.startTime) }}</h1>
+        <h1>{{ detail.garminActivityMetrics.activityName ?? 'Lauf' }}</h1>
+        <p class="activity-summary">{{ detail.activity.subSport ?? detail.activity.sport }} · {{ date(detail.activity.startTime) }}</p>
         <p class="activity-summary"><strong>{{ distance(detail.activity.distanceMeters) }}</strong> · {{ duration(detail.activity.elapsedSeconds) }} · {{ paceForRun }}</p>
       </header>
       <dl class="metrics" aria-label="Laufkennzahlen">
-        <MetricCard label="Ø Herzfrequenz" :value="bpm(detail.activity.averageHeartRate)" />
-        <MetricCard label="Max. Herzfrequenz" :value="bpm(detail.maximumHeartRate)" />
-        <MetricCard label="Höhenmeter bergauf" :value="meters(detail.activity.ascentMeters)" />
-        <MetricCard label="Höhenmeter bergab" :value="meters(descent)" />
-        <MetricCard label="Ø Kadenz" :value="displayCadence(detail.averageCadence)" />
-        <MetricCard label="Bewegungszeit" :value="duration(detail.movingSeconds)" />
-        <MetricCard label="Kalorien" :value="detail.calories === null ? '–' : `${detail.calories} kcal`" />
+        <MetricCard v-if="detail.activity.elapsedSeconds !== null" label="Gesamtzeit / verstrichene Zeit" :value="duration(detail.activity.elapsedSeconds)" />
+        <MetricCard v-if="detail.activity.averageHeartRate !== null" label="Ø Herzfrequenz" :value="bpm(detail.activity.averageHeartRate)" />
+        <MetricCard v-if="detail.maximumHeartRate !== null" label="Max. Herzfrequenz" :value="bpm(detail.maximumHeartRate)" />
+        <MetricCard v-if="detail.activity.ascentMeters !== null" label="Höhenmeter bergauf" :value="meters(detail.activity.ascentMeters)" />
+        <MetricCard v-if="descent !== null" label="Höhenmeter bergab" :value="meters(descent)" />
+        <MetricCard v-if="detail.averageCadence !== null" label="Ø Kadenz" :value="displayCadence(detail.averageCadence)" />
+        <MetricCard v-if="detail.movingSeconds !== null" label="Bewegungszeit" :value="duration(detail.movingSeconds)" />
+        <MetricCard v-if="detail.calories !== null" label="Kalorien" :value="`${detail.calories} kcal`" />
+        <MetricCard v-if="recordValues.minimumAltitudeMeters !== null" label="Min. Höhe" :value="meters(recordValues.minimumAltitudeMeters)" />
+        <MetricCard v-if="recordValues.maximumAltitudeMeters !== null" label="Max. Höhe" :value="meters(recordValues.maximumAltitudeMeters)" />
+        <MetricCard v-if="recordValues.maximumCadenceStepsPerMinute !== null" label="Max. Kadenz" :value="`${recordValues.maximumCadenceStepsPerMinute} spm`" />
+        <MetricCard v-if="paceSpeed.averagePaceSecondsPerKm !== null" label="Ø Pace" :value="formatPace(paceSpeed.averagePaceSecondsPerKm)" />
+        <MetricCard v-if="paceSpeed.movingPaceSecondsPerKm !== null" label="Ø Pace in Bewegung" :value="formatPace(paceSpeed.movingPaceSecondsPerKm)" />
+        <MetricCard v-if="paceSpeed.bestPaceSecondsPerKm !== null" label="Beste Pace" :value="formatPace(paceSpeed.bestPaceSecondsPerKm)" />
+        <MetricCard v-if="paceSpeed.averageSpeedMetersPerSecond !== null" label="Ø Geschwindigkeit" :value="kmh(paceSpeed.averageSpeedMetersPerSecond)" />
+        <MetricCard v-if="paceSpeed.movingSpeedMetersPerSecond !== null" label="Ø Geschwindigkeit in Bewegung" :value="kmh(paceSpeed.movingSpeedMetersPerSecond)" />
+        <MetricCard v-if="paceSpeed.maximumSpeedMetersPerSecond !== null" label="Max. Geschwindigkeit" :value="kmh(paceSpeed.maximumSpeedMetersPerSecond)" />
       </dl>
 
       <TrainingSummaryExport :detail="detail" />
@@ -75,7 +86,7 @@ import { LineChart } from 'echarts/charts'
 import { DataZoomComponent, GridComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { getActivity, type ActivityDetail } from '../api'
-import { chartSeries, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis } from '../activityDetail'
+import { activityPaceSpeed, chartSeries, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis, recordExtrema } from '../activityDetail'
 import MetricCard from '../components/MetricCard.vue'
 import TrainingSummaryExport from '../components/TrainingSummaryExport.vue'
 
@@ -101,9 +112,10 @@ const routeVisible = computed(() => routeCoords.value.length >= 2)
 const routePointsForMap = computed(() => routeVisible.value ? routeCoords.value : [])
 const charts = computed(() => chartSeries(detail.value?.records ?? []))
 const laps = computed(() => lapRows(detail.value?.laps ?? [], detail.value?.records ?? []))
+const paceSpeed = computed(() => detail.value ? activityPaceSpeed(detail.value) : { averageSpeedMetersPerSecond: null, movingSpeedMetersPerSecond: null, maximumSpeedMetersPerSecond: null, averagePaceSecondsPerKm: null, movingPaceSecondsPerKm: null, bestPaceSecondsPerKm: null })
+const recordValues = computed(() => recordExtrema(detail.value?.records ?? []))
 const paceForRun = computed(() => {
-  const activity = detail.value?.activity
-  return !activity || activity.elapsedSeconds === null || activity.distanceMeters === null || activity.distanceMeters <= 0 ? '–' : formatPace(activity.elapsedSeconds / (activity.distanceMeters / 1000))
+  return formatPace(paceSpeed.value.averagePaceSecondsPerKm)
 })
 const descent = computed(() => {
   if (detail.value?.laps.length && detail.value.laps.every((lap) => lap.descentMeters !== null)) return detail.value.laps.reduce((sum, lap) => sum + lap.descentMeters!, 0)
@@ -118,6 +130,7 @@ const duration = (seconds: number | null) => {
   return `${Math.floor(minutes / 60) ? `${Math.floor(minutes / 60)} h ` : ''}${String(minutes % 60).padStart(2, '0')} min`
 }
 const meters = (value: number | null) => value === null ? '–' : `${Math.round(value)} m`
+const kmh = (value: number) => `${new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(value * 3.6)} km/h`
 const bpm = (value: number | null) => value === null ? '–' : `${value} bpm`
 const garminValue = (value: number) => new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(value)
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' }).format(new Date(value))

@@ -123,18 +123,14 @@ public class ImportService {
 
     public void saveGarminTrainingMetrics(long activityId, GarminPersonalApiClient.TrainingMetrics metrics) {
         if (metrics == null) throw new IllegalArgumentException("Garmin training metrics are required");
-        int updated = jdbc.update("UPDATE activity SET garmin_training_effect = ?, garmin_anaerobic_training_effect = ?, garmin_activity_training_load = ?, garmin_enrichment_complete = TRUE WHERE id = ?",
-                metrics.aerobicTrainingEffect(), metrics.anaerobicTrainingEffect(), metrics.trainingLoad(), activityId);
+        int updated = jdbc.update("UPDATE activity SET garmin_activity_name = COALESCE(?, garmin_activity_name), garmin_average_speed_mps = COALESCE(?, garmin_average_speed_mps), garmin_training_effect = COALESCE(?, garmin_training_effect), garmin_anaerobic_training_effect = COALESCE(?, garmin_anaerobic_training_effect), garmin_activity_training_load = COALESCE(?, garmin_activity_training_load), garmin_enrichment_complete = TRUE WHERE id = ?",
+                metrics.activityName(), metrics.averageSpeedMetersPerSecond(), metrics.aerobicTrainingEffect(), metrics.anaerobicTrainingEffect(), metrics.trainingLoad(), activityId);
         if (updated != 1) throw new IllegalStateException("Imported activity is unavailable");
     }
 
     public void markGarminEnrichmentPending(long activityId) {
         if (jdbc.update("UPDATE activity SET garmin_enrichment_complete = FALSE WHERE id = ?", activityId) != 1)
             throw new IllegalStateException("Imported activity is unavailable");
-    }
-
-    public boolean garminEnrichmentPending(long activityId) {
-        return Boolean.TRUE.equals(jdbc.queryForObject("SELECT garmin_enrichment_complete = FALSE FROM activity WHERE id = ?", Boolean.class, activityId));
     }
 
     private StagedFile stage(InputStream input) throws Exception {

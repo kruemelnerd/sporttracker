@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ActivityDetail } from './api'
-import { chartSeries, createTrainingSummary, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis, serializeTrainingSummaryJson, serializeTrainingSummaryYaml } from './activityDetail'
+import { activityPaceSpeed, chartSeries, createTrainingSummary, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis, recordExtrema, serializeTrainingSummaryJson, serializeTrainingSummaryYaml } from './activityDetail'
 
 const trainingDetail: ActivityDetail = {
   activity: { id: 7, sport: 'running', subSport: null, startTime: '2026-11-10T23:30:00-02:00', elapsedSeconds: 3630.4, distanceMeters: 10039, averageHeartRate: 148.7, ascentMeters: 64.6 },
@@ -10,11 +10,37 @@ const trainingDetail: ActivityDetail = {
   averageCadence: 84,
   calories: 500,
   garminTrainingMetrics: { aerobicTrainingEffect: 3.44, anaerobicTrainingEffect: 0, trainingLoad: 126.25 },
+  garminActivityMetrics: { activityName: 'Morning run', averageSpeedMetersPerSecond: 2.8 },
   records: [],
   laps: [],
 }
 
 describe('activity detail formatting and chart preparation', () => {
+  it('uses Garmin average speed and derives moving and best pace only from available measurements', () => {
+    const result = activityPaceSpeed({
+      ...trainingDetail,
+      movingSeconds: 3500,
+      records: [
+        { elapsedSeconds: 0, distanceMeters: 0, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: 2, heartRate: null, cadence: null },
+        { elapsedSeconds: 10, distanceMeters: 20, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: 4, heartRate: null, cadence: null },
+      ],
+    })
+    expect(result.averageSpeedMetersPerSecond).toBe(2.8)
+    expect(result.movingSpeedMetersPerSecond).toBeCloseTo(10039 / 3500)
+    expect(result.maximumSpeedMetersPerSecond).toBe(4)
+    expect(result.bestPaceSecondsPerKm).toBe(250)
+    expect(activityPaceSpeed({ ...trainingDetail, movingSeconds: null, activity: { ...trainingDetail.activity, distanceMeters: 0 }, records: [] }).movingSpeedMetersPerSecond).toBeNull()
+  })
+
+  it('derives altitude and cadence extrema only from measured FIT records', () => {
+    expect(recordExtrema([
+      { elapsedSeconds: 0, distanceMeters: 0, latitude: null, longitude: null, altitudeMeters: 10, speedMetersPerSecond: null, heartRate: null, cadence: 80 },
+      { elapsedSeconds: 1, distanceMeters: 5, latitude: null, longitude: null, altitudeMeters: 15, speedMetersPerSecond: null, heartRate: null, cadence: 0 },
+      { elapsedSeconds: 2, distanceMeters: 10, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: null, heartRate: null, cadence: null },
+    ])).toEqual({ minimumAltitudeMeters: 10, maximumAltitudeMeters: 15, maximumCadenceStepsPerMinute: 160 })
+    expect(recordExtrema([])).toEqual({ minimumAltitudeMeters: null, maximumAltitudeMeters: null, maximumCadenceStepsPerMinute: null })
+  })
+
   it('formats pace and leaves unavailable or invalid values blank', () => {
     expect(formatPace(360)).toBe('6:00 min/km')
     expect(formatPace(null)).toBe('–')

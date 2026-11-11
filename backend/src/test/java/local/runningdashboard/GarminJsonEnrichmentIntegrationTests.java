@@ -65,7 +65,7 @@ class GarminJsonEnrichmentIntegrationTests {
             garmin.createContext("/activity-service/activity/" + EXTERNAL_ID, exchange -> {
                 DETAIL_REQUESTS.incrementAndGet();
                 respond(exchange, 200, """
-                        {"summaryDTO":{"trainingEffect":3.7,"anaerobicTrainingEffect":0,"activityTrainingLoad":191.5,
+                        {"activityName":"Morning run","summaryDTO":{"trainingEffect":3.7,"anaerobicTrainingEffect":0,"activityTrainingLoad":191.5,"averageSpeed":2.5,
                         "distance":999999,"movingDuration":1,"averageRunCadence":1}}
                         """);
             });
@@ -113,9 +113,11 @@ class GarminJsonEnrichmentIntegrationTests {
 
         mvc.perform(get("/api/activities/{id}", activityId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.garminTrainingMetrics.aerobicTrainingEffect").value(3.7))
-                .andExpect(jsonPath("$.garminTrainingMetrics.anaerobicTrainingEffect").value(0.0))
-                .andExpect(jsonPath("$.garminTrainingMetrics.trainingLoad").value(191.5))
+                 .andExpect(jsonPath("$.garminTrainingMetrics.aerobicTrainingEffect").value(3.7))
+                 .andExpect(jsonPath("$.garminTrainingMetrics.anaerobicTrainingEffect").value(0.0))
+                 .andExpect(jsonPath("$.garminTrainingMetrics.trainingLoad").value(191.5))
+                 .andExpect(jsonPath("$.garminActivityMetrics.activityName").value("Morning run"))
+                 .andExpect(jsonPath("$.garminActivityMetrics.averageSpeedMetersPerSecond").value(2.5))
                 .andExpect(jsonPath("$.activity.distanceMeters").value(jdbc.queryForObject("SELECT distance_meters FROM activity WHERE id = ?", Double.class, activityId)));
     }
 

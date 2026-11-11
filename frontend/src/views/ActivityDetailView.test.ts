@@ -14,6 +14,7 @@ const noData = {
   averageCadence: null,
   calories: null,
   garminTrainingMetrics: { aerobicTrainingEffect: null, anaerobicTrainingEffect: null, trainingLoad: null },
+  garminActivityMetrics: { activityName: null, averageSpeedMetersPerSecond: null },
   records: [],
   laps: [],
 }
@@ -44,7 +45,8 @@ describe('Activity detail view', () => {
     expect(wrapper.text()).toContain('Für diesen Lauf sind keine GPS-Trackpunkte vorhanden.')
     expect(wrapper.text()).toContain('Für diesen Lauf sind keine Messpunkte vorhanden.')
     expect(wrapper.text()).toContain('Für diesen Lauf sind keine Runden oder zuverlässig ableitbaren Kilometer-Splits vorhanden.')
-    expect(wrapper.find('dt').element.nextElementSibling?.textContent).toBe('–')
+    expect(wrapper.findAll('dl[aria-label="Laufkennzahlen"] dt')).toHaveLength(0)
+    expect(wrapper.find('[data-testid="garmin-training-metrics"]').exists()).toBe(false)
   })
 
   it('labels the horizontally scrollable lap table region', async () => {
@@ -100,5 +102,23 @@ describe('Activity detail view', () => {
 
     expect(wrapper.get('[role="alert"]').text()).toContain('Kopieren nicht möglich')
     expect(wrapper.find('[role="status"]').exists()).toBe(false)
+  })
+
+  it('shows Garmin activity name, training effect and speed while omitting absent optional metrics', async () => {
+    getActivity.mockResolvedValueOnce({
+      ...noData,
+      activity: { ...noData.activity, distanceMeters: 5000, elapsedSeconds: 1800 },
+      garminTrainingMetrics: { aerobicTrainingEffect: 3.7, anaerobicTrainingEffect: 0, trainingLoad: 191.5 },
+      garminActivityMetrics: { activityName: 'Morning run', averageSpeedMetersPerSecond: 2.5 },
+    })
+    const wrapper = await mountDetail()
+
+    expect(wrapper.get('h1').text()).toBe('Morning run')
+    expect(wrapper.text()).toContain('Gesamtzeit / verstrichene Zeit')
+    expect(wrapper.get('[data-testid="garmin-training-metrics"]').text()).toContain('3,7')
+    expect(wrapper.get('[data-testid="garmin-training-metrics"]').text()).toContain('191,5')
+    expect(wrapper.text()).toContain('9 km/h')
+    expect(wrapper.text()).not.toContain('Max. Geschwindigkeit')
+    expect(wrapper.text()).not.toContain('Ruhekalorien')
   })
 })

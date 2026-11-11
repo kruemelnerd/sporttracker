@@ -8,6 +8,27 @@ export function formatPace(secondsPerKm: number | null): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')} min/km`
 }
 
+export function activityPaceSpeed(detail: ActivityDetail) {
+  const distance = detail.activity.distanceMeters
+  const averageSpeedMetersPerSecond = detail.garminActivityMetrics?.averageSpeedMetersPerSecond
+    ?? detail.averageSpeedMetersPerSecond
+    ?? (distance !== null && distance > 0 && detail.activity.elapsedSeconds !== null && detail.activity.elapsedSeconds > 0
+      ? distance / detail.activity.elapsedSeconds : null)
+  const movingSpeedMetersPerSecond = distance !== null && distance > 0 && detail.movingSeconds !== null && detail.movingSeconds > 0
+    ? distance / detail.movingSeconds : null
+  const speeds = detail.records.map(({ speedMetersPerSecond }) => speedMetersPerSecond)
+    .filter((speed): speed is number => speed !== null && Number.isFinite(speed) && speed > 0)
+  const maximumSpeedMetersPerSecond = speeds.length ? speeds.reduce((maximum, speed) => Math.max(maximum, speed), 0) : null
+  return {
+    averageSpeedMetersPerSecond,
+    movingSpeedMetersPerSecond,
+    maximumSpeedMetersPerSecond,
+    averagePaceSecondsPerKm: averageSpeedMetersPerSecond && averageSpeedMetersPerSecond > 0 ? 1000 / averageSpeedMetersPerSecond : null,
+    movingPaceSecondsPerKm: movingSpeedMetersPerSecond && movingSpeedMetersPerSecond > 0 ? 1000 / movingSpeedMetersPerSecond : null,
+    bestPaceSecondsPerKm: maximumSpeedMetersPerSecond && maximumSpeedMetersPerSecond > 0 ? 1000 / maximumSpeedMetersPerSecond : null,
+  }
+}
+
 export function descendedMeters(records: ActivityRecord[]): number | null {
   let total = 0
   let previous: number | null = null
@@ -18,6 +39,16 @@ export function descendedMeters(records: ActivityRecord[]): number | null {
     previous = record.altitudeMeters
   }
   return pairs ? total : null
+}
+
+export function recordExtrema(records: ActivityRecord[]) {
+  const altitudes = records.map(({ altitudeMeters }) => altitudeMeters).filter((value): value is number => value !== null && Number.isFinite(value))
+  const cadences = records.map(({ cadence }) => cadence).filter((value): value is number => value !== null && Number.isFinite(value))
+  return {
+    minimumAltitudeMeters: altitudes.length ? altitudes.reduce((minimum, value) => Math.min(minimum, value), Number.POSITIVE_INFINITY) : null,
+    maximumAltitudeMeters: altitudes.length ? altitudes.reduce((maximum, value) => Math.max(maximum, value), Number.NEGATIVE_INFINITY) : null,
+    maximumCadenceStepsPerMinute: cadences.length ? cadences.reduce((maximum, value) => Math.max(maximum, value), 0) * 2 : null,
+  }
 }
 
 export function paceAxis(value: number): string {
