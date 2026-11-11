@@ -68,11 +68,17 @@ public class GarminPersonalApiClient {
 
     public TrainingMetrics activityTrainingMetrics(String externalId) {
         if (externalId == null || !externalId.matches("[1-9][0-9]{0,19}")) throw new GarminClientException("INVALID_EXTERNAL_ID");
-        JsonNode summary = getJson(ACTIVITY_DETAIL_PATH + externalId).path("summaryDTO");
+        JsonNode detail = getJson(ACTIVITY_DETAIL_PATH + externalId);
+        JsonNode summary = detail.path("summaryDTO");
         if (!summary.isObject()) throw new GarminClientException("INVALID_RESPONSE");
-        return new TrainingMetrics(metric(summary.path("trainingEffect"), 0, 5),
+        return new TrainingMetrics(text(detail.path("activityName"), 200), metric(summary.path("averageSpeed"), 0, 20),
+                metric(summary.path("trainingEffect"), 0, 5),
                 metric(summary.path("anaerobicTrainingEffect"), 0, 5),
                 metric(summary.path("activityTrainingLoad"), 0, 10_000));
+    }
+
+    private static String text(JsonNode value, int maximumLength) {
+        return value.isTextual() && !value.asText().isBlank() && value.asText().length() <= maximumLength ? value.asText() : null;
     }
 
     private static Double metric(JsonNode value, double minimum, double maximum) {
@@ -184,6 +190,12 @@ public class GarminPersonalApiClient {
     public record Activity(String id, String type) { }
     public record ActivitySearch(List<Activity> activities, boolean complete) { }
     public record Download(int status, byte[] body, String contentType, Duration retryAfter) { }
-    public record TrainingMetrics(Double aerobicTrainingEffect, Double anaerobicTrainingEffect, Double trainingLoad) { }
+    public record TrainingMetrics(String activityName, Double averageSpeedMetersPerSecond,
+                                  Double aerobicTrainingEffect,
+                                  Double anaerobicTrainingEffect, Double trainingLoad) {
+        public TrainingMetrics(Double aerobicTrainingEffect, Double anaerobicTrainingEffect, Double trainingLoad) {
+            this(null, null, aerobicTrainingEffect, anaerobicTrainingEffect, trainingLoad);
+        }
+    }
     private record Token(String value, Instant expiresAt) { }
 }

@@ -51,6 +51,22 @@ class GarminPersonalApiClientTests {
     }
 
     @Test
+    void readsAvailableActivityNameAndAverageSpeedWithoutTurningMissingValuesIntoZero() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/personalapitoken-service/personal-api/personal-api-key/token", exchange -> respond(exchange, 200, "token"));
+        server.createContext("/activity-service/activity/101", exchange -> respond(exchange, 200,
+                "{\"activityName\":\"Morning run\",\"summaryDTO\":{\"trainingEffect\":3.7,\"anaerobicTrainingEffect\":0,\"activityTrainingLoad\":191.5,\"averageSpeed\":2.5}}"));
+        server.start();
+
+        var metrics = client(10, 2).activityTrainingMetrics("101");
+
+        assertEquals("Morning run", metrics.activityName());
+        assertEquals(2.5, metrics.averageSpeedMetersPerSecond());
+        assertEquals(3.7, metrics.aerobicTrainingEffect());
+        assertEquals(0.0, metrics.anaerobicTrainingEffect());
+    }
+
+    @Test
     void rejectsTheObsoleteActivityTypeDtoShape() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/personalapitoken-service/personal-api/personal-api-key/token", exchange -> respond(exchange, 200, "token"));

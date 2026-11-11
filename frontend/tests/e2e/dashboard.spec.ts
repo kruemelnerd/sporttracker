@@ -102,7 +102,8 @@ const detail = (id: number, withGps = false) => ({
   maximumHeartRate: 160,
   averageCadence: 84,
   calories: 300,
-  garminTrainingMetrics: { aerobicTrainingEffect: null, anaerobicTrainingEffect: null, trainingLoad: null },
+  garminTrainingMetrics: { aerobicTrainingEffect: 3.7, anaerobicTrainingEffect: 0, trainingLoad: 191.5 },
+  garminActivityMetrics: { activityName: 'Morning run', averageSpeedMetersPerSecond: 2.78 },
   records: [
     { elapsedSeconds: 0, distanceMeters: 0, latitude: withGps ? 50 : null, longitude: withGps ? 8 : null, altitudeMeters: 100, speedMetersPerSecond: null, heartRate: 130, cadence: 70 },
     { elapsedSeconds: 253.02, distanceMeters: 100, latitude: withGps ? 50.001 : null, longitude: withGps ? 8.001 : null, altitudeMeters: 101, speedMetersPerSecond: null, heartRate: 132, cadence: 72 },
@@ -128,6 +129,10 @@ test('direct activity URL loads detail with GPS map and recorded laps', async ({
   await expect(page.locator('[data-testid="heart-rate-chart"] canvas')).toHaveCount(1)
   await expect(page.locator('[data-testid="elevation-chart"] canvas')).toHaveCount(1)
   await expect(page.getByTestId('elevation-chart')).toHaveAttribute('aria-label', 'Höhenprofil-Diagramm (4 Werte)')
+  await expect(page.getByRole('heading', { name: 'Morning run' })).toBeVisible()
+  await expect(page.getByTestId('garmin-training-metrics')).toContainText('Trainingsbelastung')
+  await expect(page.getByTestId('garmin-training-metrics')).toContainText('191,5')
+  await expect(page.getByText('10 km/h')).toBeVisible()
 })
 
 test('activity detail retains map, charts and labelled laps across mobile and tablet widths', async ({ page }) => {

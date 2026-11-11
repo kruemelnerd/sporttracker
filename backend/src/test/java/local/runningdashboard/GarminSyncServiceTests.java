@@ -46,25 +46,28 @@ class GarminSyncServiceTests {
     }
 
     @Test
-    void importsOnceAndSkipsMappedIdsOnRepeatedSync() {
+    void updatesGarminEnrichmentOnRepeatedSyncWithoutReimportingMappedIds() {
         var source = new FakeSource(List.of(new ActivityImportSource.RemoteActivity("771", "trail_running")), fit);
-        source.trainingMetrics = new GarminPersonalApiClient.TrainingMetrics(3.2, 0.0, 175.5);
+        source.trainingMetrics = new GarminPersonalApiClient.TrainingMetrics("Morning run", 2.5, 3.2, 0.0, 175.5);
         var service = service(source);
 
         var first = service.synchronize();
         Long activityId = mappings.findActivityId("GARMIN", "771").orElseThrow();
         Double fitDistance = jdbc.queryForObject("SELECT distance_meters FROM activity WHERE id = ?", Double.class, activityId);
+        source.trainingMetrics = new GarminPersonalApiClient.TrainingMetrics("Updated run", 2.6, 4.0, 0.0, 180.0);
         var second = service.synchronize();
 
         assertEquals(1, first.imported());
         assertEquals(1, second.alreadyPresent());
         assertEquals(1, source.downloads);
-        assertEquals(1, source.detailRequests);
+        assertEquals(2, source.detailRequests);
         assertTrue(mappings.findActivityId("GARMIN", "771").isPresent());
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", Integer.class, HASH));
-        assertEquals(3.2, jdbc.queryForObject("SELECT garmin_training_effect FROM activity WHERE id = ?", Double.class, mappings.findActivityId("GARMIN", "771").orElseThrow()));
+        assertEquals(4.0, jdbc.queryForObject("SELECT garmin_training_effect FROM activity WHERE id = ?", Double.class, mappings.findActivityId("GARMIN", "771").orElseThrow()));
         assertEquals(0.0, jdbc.queryForObject("SELECT garmin_anaerobic_training_effect FROM activity WHERE id = ?", Double.class, mappings.findActivityId("GARMIN", "771").orElseThrow()));
-        assertEquals(175.5, jdbc.queryForObject("SELECT garmin_activity_training_load FROM activity WHERE id = ?", Double.class, mappings.findActivityId("GARMIN", "771").orElseThrow()));
+        assertEquals(180.0, jdbc.queryForObject("SELECT garmin_activity_training_load FROM activity WHERE id = ?", Double.class, mappings.findActivityId("GARMIN", "771").orElseThrow()));
+        assertEquals("Updated run", jdbc.queryForObject("SELECT garmin_activity_name FROM activity WHERE id = ?", String.class, activityId));
+        assertEquals(2.6, jdbc.queryForObject("SELECT garmin_average_speed_mps FROM activity WHERE id = ?", Double.class, activityId));
         assertEquals(Boolean.TRUE, jdbc.queryForObject("SELECT garmin_enrichment_complete FROM activity WHERE id = ?", Boolean.class, activityId));
         assertEquals(fitDistance, jdbc.queryForObject("SELECT distance_meters FROM activity WHERE id = ?", Double.class, activityId));
         assertEquals("GARMIN", jdbc.queryForObject("SELECT source FROM import_file WHERE sha256 = ?", String.class, HASH));
@@ -88,7 +91,7 @@ class GarminSyncServiceTests {
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", Integer.class, HASH));
         assertEquals(1, mappings.findActivityId("GARMIN", "772").isPresent() ? 1 : 0);
         assertEquals(Boolean.FALSE, jdbc.queryForObject("SELECT garmin_enrichment_complete FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", Boolean.class, HASH));
-        assertEquals(1, source.detailRequests);
+        assertEquals(2, source.detailRequests);
         assertEquals(null, states.find().orElseThrow().lastSuccessfulSyncAt());
     }
 

@@ -74,6 +74,7 @@ export type ActivityDetail = {
   averageCadence: number | null
   calories: number | null
   garminTrainingMetrics: GarminTrainingMetrics
+  garminActivityMetrics: GarminActivityMetrics
   records: ActivityRecord[]
   laps: Lap[]
 }
@@ -82,6 +83,11 @@ export type GarminTrainingMetrics = {
   aerobicTrainingEffect: number | null
   anaerobicTrainingEffect: number | null
   trainingLoad: number | null
+}
+
+export type GarminActivityMetrics = {
+  activityName: string | null
+  averageSpeedMetersPerSecond: number | null
 }
 
 export type ImportOutcome = {

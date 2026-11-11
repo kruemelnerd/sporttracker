@@ -111,7 +111,13 @@ public class GarminSyncService {
                 var mappedActivity = mappings.findActivityId("GARMIN", activity.id());
                 if (mappedActivity.isPresent()) {
                     counts.alreadyPresent++;
-                    if (imports.garminEnrichmentPending(mappedActivity.get())) { counts.failed++; error = "GARMIN_ENRICHMENT_FAILED"; }
+                    try {
+                        imports.markGarminEnrichmentPending(mappedActivity.get());
+                        imports.saveGarminTrainingMetrics(mappedActivity.get(), source.fetchTrainingMetrics(activity.id()));
+                    } catch (RuntimeException failure) {
+                        counts.failed++;
+                        error = "GARMIN_ENRICHMENT_FAILED";
+                    }
                     continue;
                 }
                 try {
