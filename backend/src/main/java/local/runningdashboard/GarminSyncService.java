@@ -108,7 +108,12 @@ public class GarminSyncService {
                     counts.failed++; error = "INVALID_EXTERNAL_ACTIVITY"; continue;
                 }
                 if (!isRun(activity.type())) { counts.skipped++; continue; }
-                if (mappings.findActivityId("GARMIN", activity.id()).isPresent()) { counts.alreadyPresent++; continue; }
+                var mappedActivity = mappings.findActivityId("GARMIN", activity.id());
+                if (mappedActivity.isPresent()) {
+                    counts.alreadyPresent++;
+                    if (imports.garminEnrichmentPending(mappedActivity.get())) { counts.failed++; error = "GARMIN_ENRICHMENT_FAILED"; }
+                    continue;
+                }
                 try {
                     var file = source.downloadActivityFile(activity.id());
                     if (file == null || file.body() == null) { counts.skipped++; continue; }
@@ -117,6 +122,13 @@ public class GarminSyncService {
                         case "IMPORTED" -> {
                             String linkError = link(activity.id(), outcome.activityId(), counts, true);
                             if (linkError != null) error = linkError;
+                            else try {
+                                imports.markGarminEnrichmentPending(outcome.activityId());
+                                imports.saveGarminTrainingMetrics(outcome.activityId(), source.fetchTrainingMetrics(activity.id()));
+                            } catch (RuntimeException failure) {
+                                counts.failed++;
+                                error = "GARMIN_ENRICHMENT_FAILED";
+                            }
                         }
                         case "DUPLICATE" -> {
                             if (outcome.activityId() == null) { counts.failed++; error = "AMBIGUOUS_ACTIVITY_MATCH"; }

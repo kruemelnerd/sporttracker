@@ -13,6 +13,7 @@ const noData = {
   maximumHeartRate: null,
   averageCadence: null,
   calories: null,
+  garminTrainingMetrics: { aerobicTrainingEffect: null, anaerobicTrainingEffect: null, trainingLoad: null },
   records: [],
   laps: [],
 }
@@ -51,5 +52,20 @@ describe('Activity detail view', () => {
 
     expect(wrapper.find('[role="region"][aria-label="Rundentabelle; horizontal scrollbar auf kleinen Bildschirmen"]').exists()).toBe(true)
     expect(wrapper.find('table').exists()).toBe(true)
+  })
+
+  it('shows only available Garmin training metrics and hides the section when all are absent', async () => {
+    let wrapper = await mountDetail()
+    expect(wrapper.find('[data-testid="garmin-training-metrics"]').exists()).toBe(false)
+
+    getActivity.mockResolvedValueOnce({ ...noData, garminTrainingMetrics: { aerobicTrainingEffect: 0, anaerobicTrainingEffect: null, trainingLoad: 175.5 } })
+    wrapper = await mountDetail()
+
+    expect(wrapper.find('[data-testid="garmin-training-metrics"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Aerober Training Effect')
+    expect(wrapper.text()).toContain('0')
+    expect(wrapper.text()).toContain('Trainingsbelastung')
+    expect(wrapper.text()).toContain('175,5')
+    expect(wrapper.text()).not.toContain('Anaerober Training Effect')
   })
 })

@@ -48,18 +48,48 @@ class GarminSyncServiceTests {
     @Test
     void importsOnceAndSkipsMappedIdsOnRepeatedSync() {
         var source = new FakeSource(List.of(new ActivityImportSource.RemoteActivity("771", "trail_running")), fit);
+        source.trainingMetrics = new GarminPersonalApiClient.TrainingMetrics(3.2, 0.0, 175.5);
         var service = service(source);
 
         var first = service.synchronize();
+        Long activityId = mappings.findActivityId("GARMIN", "771").orElseThrow();
+        Double fitDistance = jdbc.queryForObject("SELECT distance_meters FROM activity WHERE id = ?", Double.class, activityId);
         var second = service.synchronize();
 
         assertEquals(1, first.imported());
         assertEquals(1, second.alreadyPresent());
         assertEquals(1, source.downloads);
+        assertEquals(1, source.detailRequests);
         assertTrue(mappings.findActivityId("GARMIN", "771").isPresent());
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", Integer.class, HASH));
+        assertEquals(3.2, jdbc.queryForObject("SELECT garmin_training_effect FROM activity WHERE id = ?", Double.class, mappings.findActivityId("GARMIN", "771").orElseThrow()));
+        assertEquals(0.0, jdbc.queryForObject("SELECT garmin_anaerobic_training_effect FROM activity WHERE id = ?", Double.class, mappings.findActivityId("GARMIN", "771").orElseThrow()));
+        assertEquals(175.5, jdbc.queryForObject("SELECT garmin_activity_training_load FROM activity WHERE id = ?", Double.class, mappings.findActivityId("GARMIN", "771").orElseThrow()));
+        assertEquals(Boolean.TRUE, jdbc.queryForObject("SELECT garmin_enrichment_complete FROM activity WHERE id = ?", Boolean.class, activityId));
+        assertEquals(fitDistance, jdbc.queryForObject("SELECT distance_meters FROM activity WHERE id = ?", Double.class, activityId));
         assertEquals("GARMIN", jdbc.queryForObject("SELECT source FROM import_file WHERE sha256 = ?", String.class, HASH));
         assertEquals(Instant.parse("2026-10-19T10:00:00Z"), states.find().orElseThrow().lastSuccessfulSyncAt());
+    }
+
+    @Test
+    void keepsImportedFitWhenGarminDetailRequestFailsAndMarksPartialSyncFailed() {
+        var source = new FakeSource(List.of(new ActivityImportSource.RemoteActivity("772", "running")), fit);
+        source.detailFailure = new GarminClientException("GARMIN_UNAVAILABLE");
+
+        var service = service(source);
+        var result = service.synchronize();
+        var repeated = service.synchronize();
+
+        assertEquals(1, result.imported());
+        assertEquals(1, result.failed());
+        assertEquals("GARMIN_ENRICHMENT_FAILED", result.error());
+        assertEquals(1, repeated.failed());
+        assertEquals("GARMIN_ENRICHMENT_FAILED", repeated.error());
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", Integer.class, HASH));
+        assertEquals(1, mappings.findActivityId("GARMIN", "772").isPresent() ? 1 : 0);
+        assertEquals(Boolean.FALSE, jdbc.queryForObject("SELECT garmin_enrichment_complete FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", Boolean.class, HASH));
+        assertEquals(1, source.detailRequests);
+        assertEquals(null, states.find().orElseThrow().lastSuccessfulSyncAt());
     }
 
     @Test
@@ -98,6 +128,9 @@ class GarminSyncServiceTests {
             }
             @Override public ActivityFile downloadActivityFile(String id) {
                 return new ActivityFile("bad".equals(id) ? new byte[] {1, 2, 3} : fit, "application/octet-stream", null);
+            }
+            @Override public GarminPersonalApiClient.TrainingMetrics fetchTrainingMetrics(String id) {
+                return new GarminPersonalApiClient.TrainingMetrics(null, null, null);
             }
         };
 
@@ -190,11 +223,19 @@ class GarminSyncServiceTests {
         private final List<RemoteActivity> activities;
         private final byte[] fit;
         private int downloads;
+        private int detailRequests;
+        private GarminPersonalApiClient.TrainingMetrics trainingMetrics = new GarminPersonalApiClient.TrainingMetrics(null, null, null);
+        private RuntimeException detailFailure;
         private LocalDate oldest;
         int oldestCalls;
         private FakeSource(List<RemoteActivity> activities, byte[] fit) { this.activities = activities; this.fit = fit; }
         @Override public String provider() { return "GARMIN"; }
         @Override public List<RemoteActivity> listActivities(LocalDate oldest, LocalDate newest) { this.oldest = oldest; oldestCalls++; return activities; }
         @Override public ActivityFile downloadActivityFile(String externalId) { downloads++; return new ActivityFile(fit, "application/octet-stream", null); }
+        @Override public GarminPersonalApiClient.TrainingMetrics fetchTrainingMetrics(String externalId) {
+            detailRequests++;
+            if (detailFailure != null) throw detailFailure;
+            return trainingMetrics;
+        }
     }
 }

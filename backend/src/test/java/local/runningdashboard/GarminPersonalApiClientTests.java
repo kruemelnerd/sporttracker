@@ -153,6 +153,64 @@ class GarminPersonalApiClientTests {
     }
 
     @Test
+    void loadsOnlyValidatedTrainingMetricsFromActivitySummary() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/personalapitoken-service/personal-api/personal-api-key/token", exchange -> respond(exchange, 200, "token"));
+        server.createContext("/activity-service/activity/123", exchange -> {
+            assertEquals("Bearer token", exchange.getRequestHeaders().getFirst("Authorization"));
+            respond(exchange, 200, """
+                    {"summaryDTO":{"trainingEffect":3.4,"anaerobicTrainingEffect":0,"activityTrainingLoad":175.5,
+                    "movingDuration":999,"averageRunCadence":999}}
+                    """);
+        });
+        server.start();
+
+        var metrics = client(10, 2).activityTrainingMetrics("123");
+
+        assertEquals(3.4, metrics.aerobicTrainingEffect());
+        assertEquals(0.0, metrics.anaerobicTrainingEffect());
+        assertEquals(175.5, metrics.trainingLoad());
+    }
+
+    @Test
+    void leavesMissingAndInvalidOptionalTrainingMetricsNull() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/personalapitoken-service/personal-api/personal-api-key/token", exchange -> respond(exchange, 200, "token"));
+        server.createContext("/activity-service/activity/123", exchange -> respond(exchange, 200,
+                "{\"summaryDTO\":{\"trainingEffect\":6,\"anaerobicTrainingEffect\":null,\"activityTrainingLoad\":-1}}"));
+        server.start();
+
+        var metrics = client(10, 2).activityTrainingMetrics("123");
+
+        assertEquals(null, metrics.aerobicTrainingEffect());
+        assertEquals(null, metrics.anaerobicTrainingEffect());
+        assertEquals(null, metrics.trainingLoad());
+    }
+
+    @Test
+    void rejectsInvalidActivityIdWithoutRequestingDetail() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/personalapitoken-service/personal-api/personal-api-key/token", exchange -> respond(exchange, 200, "token"));
+        server.start();
+
+        var failure = assertThrows(GarminClientException.class, () -> client(10, 2).activityTrainingMetrics("../123"));
+
+        assertEquals("INVALID_EXTERNAL_ID", failure.code());
+    }
+
+    @Test
+    void rejectsDetailResponseWithoutSummaryObject() throws Exception {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/personalapitoken-service/personal-api/personal-api-key/token", exchange -> respond(exchange, 200, "token"));
+        server.createContext("/activity-service/activity/123", exchange -> respond(exchange, 200, "{}"));
+        server.start();
+
+        var failure = assertThrows(GarminClientException.class, () -> client(10, 2).activityTrainingMetrics("123"));
+
+        assertEquals("INVALID_RESPONSE", failure.code());
+    }
+
+    @Test
     void doesNotFollowRedirectsFromAnAuthorizedSearchRequest() throws Exception {
         AtomicInteger redirected = new AtomicInteger();
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
