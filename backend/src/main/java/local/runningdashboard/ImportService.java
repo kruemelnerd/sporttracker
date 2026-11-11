@@ -27,18 +27,33 @@ public class ImportService {
     private final TransactionTemplate transactions;
     private final Path dataDirectory;
     private final ImportProperties properties;
+    private final DataMutationCoordinator mutations;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public ImportService(GarminFitFixtureAdapter adapter, JdbcTemplate jdbc, TransactionTemplate transactions,
-                          @Value("${running-dashboard.data-directory}") String dataDirectory, ImportProperties properties) {
+                          @Value("${running-dashboard.data-directory}") String dataDirectory, ImportProperties properties,
+                          DataMutationCoordinator mutations) {
         this.adapter = adapter;
         this.jdbc = jdbc;
         this.transactions = transactions;
         this.transactions.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
         this.dataDirectory = Path.of(dataDirectory).toAbsolutePath().normalize();
         this.properties = properties;
+        this.mutations = mutations;
+    }
+
+    public ImportService(GarminFitFixtureAdapter adapter, JdbcTemplate jdbc, TransactionTemplate transactions,
+                         String dataDirectory, ImportProperties properties) {
+        this(adapter, jdbc, transactions, dataDirectory, properties, new DataMutationCoordinator());
     }
 
     public ImportBatch importFiles(List<MultipartFile> files) {
+        try (var ignored = mutations.acquire()) {
+            return importFilesLocked(files);
+        }
+    }
+
+    private ImportBatch importFilesLocked(List<MultipartFile> files) {
         if (files == null || files.size() > properties.maxBatchCount()) {
             return new ImportBatch(List.of(), new ImportBatchError("BATCH_COUNT_EXCEEDED", "Select at most " + properties.maxBatchCount() + " files per import."));
         }
@@ -58,6 +73,17 @@ public class ImportService {
     }
 
     public ImportOutcome importFit(InputStream fitInput) {
+        return importFit(fitInput, "MANUAL");
+    }
+
+    public ImportOutcome importFit(InputStream fitInput, String source) {
+        if (!List.of("MANUAL", "GARMIN", "INTERVALS_ICU").contains(source)) throw new IllegalArgumentException("Unknown import source");
+        try (var ignored = mutations.acquire()) {
+            return importFitLocked(fitInput, source);
+        }
+    }
+
+    private ImportOutcome importFitLocked(InputStream fitInput, String source) {
         if (fitInput == null) return ImportOutcome.invalid("EMPTY_FILE");
         StagedFile staged = null;
         try {
@@ -73,12 +99,12 @@ public class ImportService {
             List<Long> existing = existingActivities(decoded);
             if (existing.size() == 1) {
                 Long activityId = existing.getFirst();
-                jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes) VALUES (?, ?, ?)", activityId, hash, staged.size());
+                jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes, source) VALUES (?, ?, ?, ?)", activityId, hash, staged.size(), source);
                 return ImportOutcome.duplicate(activityId);
             }
             if (existing.size() > 1) return ImportOutcome.ambiguousDuplicate();
             StagedFile committedStaged = staged;
-            Long activityId = transactions.execute(status -> persist(decoded, hash, committedStaged.size()));
+            Long activityId = transactions.execute(status -> persist(decoded, hash, committedStaged.size(), source));
             if (activityId == null) return ImportOutcome.failed();
             boolean retained = retainOriginal(hash, staged.path(), activityId);
             staged = null;
@@ -154,10 +180,10 @@ public class ImportService {
         return left != null && right != null && Math.abs(left - right) <= tolerance;
     }
 
-    private Long persist(GarminFitFixtureAdapter.DecodedActivity decoded, String hash, long sizeBytes) {
+    private Long persist(GarminFitFixtureAdapter.DecodedActivity decoded, String hash, long sizeBytes, String source) {
         Long activityId = jdbc.queryForObject("INSERT INTO activity (sport, sub_sport, start_time, elapsed_seconds, moving_seconds, distance_meters, average_speed_mps, average_heart_rate, maximum_heart_rate, average_cadence, ascent_meters, calories) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
                 Long.class, decoded.sport(), decoded.subSport(), Timestamp.from(decoded.startTime()), decoded.elapsedSeconds(), decoded.movingSeconds(), decoded.distanceMeters(), decoded.averageSpeedMetersPerSecond(), decoded.averageHeartRate(), decoded.maximumHeartRate(), decoded.averageCadence(), decoded.ascentMeters(), decoded.calories());
-        jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes) VALUES (?, ?, ?)", activityId, hash, sizeBytes);
+        jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes, source) VALUES (?, ?, ?, ?)", activityId, hash, sizeBytes, source);
         int index = 0;
         for (GarminFitFixtureAdapter.DecodedRecord record : decoded.records()) {
             jdbc.update("INSERT INTO activity_record (activity_id, record_index, record_time, elapsed_seconds, distance_meters, latitude, longitude, altitude_meters, speed_mps, heart_rate, cadence, descent_meters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",

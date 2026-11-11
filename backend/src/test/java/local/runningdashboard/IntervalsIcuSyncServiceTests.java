@@ -38,12 +38,15 @@ class IntervalsIcuSyncServiceTests {
     @Autowired private JdbcTemplate jdbc;
     @Autowired private ImportService imports;
     @Autowired private ActivityImportSourceRepository mappings;
+    @Autowired private SyncPauseRepository pauses;
+    @Autowired private DataMutationCoordinator mutations;
 
     private byte[] fit;
     private HttpServer mockHttp;
 
     @BeforeEach
     void removeFixtureAndReadBytes() throws Exception {
+        pauses.resume("INTERVALS_ICU");
         jdbc.update("DELETE FROM activity WHERE id IN (SELECT activity_id FROM import_file WHERE sha256 = ?)", FIXTURE_HASH);
         try (InputStream input = new ClassPathResource("fit/synthetic-running.fit").getInputStream()) { fit = input.readAllBytes(); }
     }
@@ -71,6 +74,22 @@ class IntervalsIcuSyncServiceTests {
         assertEquals(1, result.imported());
         assertEquals(1, activityCount());
         assertTrue(mappings.findActivityId("INTERVALS_ICU", "mock-http").isPresent());
+        assertEquals("INTERVALS_ICU", jdbc.queryForObject("SELECT source FROM import_file WHERE sha256 = ?", String.class, FIXTURE_HASH));
+    }
+
+    @Test
+    void persistedPausePreventsManualAndAutomaticSyncFromCallingTheProvider() {
+        var source = new FakeSource(List.of(activity("paused", "Run")));
+        pauses.pause("INTERVALS_ICU");
+        var sync = service(source);
+
+        var result = sync.synchronize();
+
+        assertFalse(result.started());
+        assertEquals("SYNC_PAUSED", result.error());
+        assertEquals(0, source.listCalls);
+        assertFalse(sync.startAsync(Runnable::run));
+        assertEquals(0, source.listCalls);
     }
 
     @Test
@@ -338,7 +357,7 @@ class IntervalsIcuSyncServiceTests {
 
     private IntervalsIcuSyncService service(ActivityImportSource source, ActivityImportSourceRepository repository) {
         var properties = new IntervalsIcuProperties(true, "test-key", "http://127.0.0.1:1", Duration.ofMinutes(15), 90);
-        return new IntervalsIcuSyncService(source, imports, repository, properties, Clock.fixed(NOW, ZoneOffset.UTC));
+        return new IntervalsIcuSyncService(source, imports, repository, properties, Clock.fixed(NOW, ZoneOffset.UTC), ZoneOffset.UTC, pauses, mutations);
     }
 
     private int activityCount() {

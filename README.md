@@ -120,6 +120,8 @@ Mit `Ctrl-C` werden Backend und Frontend beendet; PostgreSQL bleibt gestartet un
 
 Der Garmin-Importstatus lässt sich anschließend in der Importansicht prüfen. **Achtung:** Bei aktiviertem Garmin kann der Sync bereits beim Anwendungsstart automatisch anlaufen (ApplicationReady-Trigger), danach periodisch weiterlaufen. Vor einem Live-Test prüfen, dass `DATABASE_URL` auf die lokale Entwicklungsdatenbank `running_dashboard` zeigt; niemals dafür eine produktive Datenbank verwenden.
 
+Die optionale Datenverwaltung/Löschfunktion ist standardmäßig deaktiviert. Nur für eine bewusst verwendete lokale Entwicklungsdatenbank kann sie mit `DATA_DELETION_ENABLED=true` aktiviert werden. Die API verlangt same-origin-JSON-POSTs und eine einmalige Vorschau plus exakte Bestätigungsphrase; dies ersetzt keine Anmeldung. Im Profil `container`, `prod` oder `production` bleiben Status- und Löschendpunkte unabhängig von Environment-Overrides gesperrt. Provider-Pausen bleiben nach Neustarts bestehen und werden nur über **Daten verwalten → ausdrücklich wieder freigeben** aufgehoben. Alle Löschtests laufen ausschließlich auf isolierten Testdatenbanken mit synthetischen FIT-Dateien.
+
 ## Containerbetrieb
 
 Für den produktiven Docker-Compose-Betrieb, Secrets, persistente Volumes sowie Backup und Restore siehe [docs/containerization.md](docs/containerization.md). Die schrittweise Linux-/VM-/LXC-Erstinstallation ist in [docs/proxmox-first-install.md](docs/proxmox-first-install.md) beschrieben; [docs/proxmox-deployment.md](docs/proxmox-deployment.md) ergänzt Architektur und verifizierten Deployment-Ablauf. Der lokale Entwicklungsstart über `./dev.sh` bleibt davon unabhängig.
