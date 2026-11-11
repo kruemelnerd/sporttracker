@@ -1,5 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { chartSeries, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis } from './activityDetail'
+import type { ActivityDetail } from './api'
+import { chartSeries, createTrainingSummary, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis, serializeTrainingSummaryJson, serializeTrainingSummaryYaml } from './activityDetail'
+
+const trainingDetail: ActivityDetail = {
+  activity: { id: 7, sport: 'running', subSport: null, startTime: '2026-11-10T23:30:00-02:00', elapsedSeconds: 3630.4, distanceMeters: 10039, averageHeartRate: 148.7, ascentMeters: 64.6 },
+  movingSeconds: 3570.6,
+  averageSpeedMetersPerSecond: null,
+  maximumHeartRate: 172.6,
+  averageCadence: 84,
+  calories: 500,
+  garminTrainingMetrics: { aerobicTrainingEffect: 3.44, anaerobicTrainingEffect: 0, trainingLoad: 126.25 },
+  records: [],
+  laps: [],
+}
 
 describe('activity detail formatting and chart preparation', () => {
   it('formats pace and leaves unavailable or invalid values blank', () => {
@@ -119,5 +132,78 @@ describe('activity detail formatting and chart preparation', () => {
       { elapsedSeconds: 301, distanceMeters: 1000, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: null, heartRate: null, cadence: null },
     ]
     expect(lapRows([], records).map(({ distanceMeters, durationSeconds }) => [distanceMeters, durationSeconds])).toEqual([[1000, 301]])
+  })
+})
+
+describe('training summary export', () => {
+  it('builds a compact summary with rounded units, total-time pace, local date, and single cadence conversion', () => {
+    expect(createTrainingSummary(trainingDetail)).toEqual({
+      schema_version: 1,
+      sport: 'running',
+      date: new Date(trainingDetail.activity.startTime).toLocaleDateString('en-CA'),
+      distance_km: 10.04,
+      elapsed_sec: 3630,
+      moving_sec: 3571,
+      avg_pace_sec_per_km: 362,
+      heart_rate_bpm: { avg: 149, max: 173 },
+      cadence_steps_per_min: 168,
+      ascent_m: 65,
+      garmin: { aerobic_training_effect: 3.4, anaerobic_training_effect: 0, training_load: 126.25 },
+    })
+  })
+
+  it('omits missing values and preserves measured zeroes', () => {
+    const detail = { ...trainingDetail, activity: { ...trainingDetail.activity, distanceMeters: null, elapsedSeconds: null, averageHeartRate: null, ascentMeters: null }, movingSeconds: null, maximumHeartRate: null, averageCadence: null, garminTrainingMetrics: { aerobicTrainingEffect: null, anaerobicTrainingEffect: 0, trainingLoad: null } }
+    expect(createTrainingSummary(detail)).toEqual({
+      schema_version: 1,
+      sport: 'running',
+      date: new Date(detail.activity.startTime).toLocaleDateString('en-CA'),
+      garmin: { anaerobic_training_effect: 0 },
+    })
+  })
+
+  it('does not calculate pace for a zero or invalid distance', () => {
+    expect(createTrainingSummary({ ...trainingDetail, activity: { ...trainingDetail.activity, distanceMeters: 0 } })).not.toHaveProperty('avg_pace_sec_per_km')
+    expect(createTrainingSummary({ ...trainingDetail, activity: { ...trainingDetail.activity, distanceMeters: Number.NaN } })).not.toHaveProperty('distance_km')
+  })
+
+  it('exports recorded lap distance as recorded and never invents derived split heart rate', () => {
+    const recorded = { lapNumber: 3, distanceMeters: 1200, durationSeconds: 360, averageSpeedMetersPerSecond: null, averageHeartRate: null, averageCadence: null, ascentMeters: null, descentMeters: null }
+    const recordedSummary = createTrainingSummary({ ...trainingDetail, laps: [recorded] }, true)
+    expect(recordedSummary.splits).toEqual([{ lap_number: 3, distance_km: 1.2, duration_sec: 360, avg_pace_sec_per_km: 300, source: 'recorded' }])
+
+    const records = [
+      { elapsedSeconds: 0, distanceMeters: 0, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: null, heartRate: 150, cadence: null },
+      { elapsedSeconds: 7560, distanceMeters: 21000, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: null, heartRate: 160, cadence: null },
+    ]
+    const derived = createTrainingSummary({ ...trainingDetail, laps: [], records }, true).splits!
+    expect(derived).toHaveLength(21)
+    expect(derived.at(-1)).toEqual({ lap_number: 21, distance_km: 1, duration_sec: 360, avg_pace_sec_per_km: 360, source: 'derived' })
+    expect(derived.every((split) => !('avg_heart_rate_bpm' in split))).toBe(true)
+
+    const partial = createTrainingSummary({ ...trainingDetail, laps: [], records: [records[0], { ...records[1], elapsedSeconds: 900, distanceMeters: 2500 }] }, true).splits!
+    expect(partial.map(({ distance_km }) => distance_km)).toEqual([1, 1, 0.5])
+  })
+
+  it('omits splits when none can be derived and keeps disabled splits out', () => {
+    expect(createTrainingSummary({ ...trainingDetail, laps: [] }, true)).not.toHaveProperty('splits')
+    expect(createTrainingSummary({ ...trainingDetail, laps: [{ lapNumber: 1, distanceMeters: 1000, durationSeconds: 360, averageSpeedMetersPerSecond: null, averageHeartRate: 150, averageCadence: null, ascentMeters: null, descentMeters: null }] })).not.toHaveProperty('splits')
+  })
+
+  it('serializes the same compact data as valid JSON and readable YAML without sensitive fields', () => {
+    const summary = createTrainingSummary(trainingDetail)
+    const json = serializeTrainingSummaryJson(summary)
+    const yaml = serializeTrainingSummaryYaml(summary)
+    expect(JSON.parse(json)).toEqual(summary)
+    expect(yaml).toContain('schema_version: 1\nsport: "running"')
+    expect(yaml).toContain('heart_rate_bpm:\n  avg: 149\n  max: 173')
+    expect(json + yaml).not.toMatch(/latitude|longitude|records|api[_-]?key|file[_-]?path/i)
+    expect(json + yaml).not.toMatch(/NaN|Infinity/)
+  })
+
+  it('omits non-finite Garmin values instead of emitting invalid JSON or YAML numbers', () => {
+    const summary = createTrainingSummary({ ...trainingDetail, garminTrainingMetrics: { aerobicTrainingEffect: Number.NaN, anaerobicTrainingEffect: null, trainingLoad: Number.POSITIVE_INFINITY } })
+    expect(summary).not.toHaveProperty('garmin')
+    expect(serializeTrainingSummaryJson(summary) + serializeTrainingSummaryYaml(summary)).not.toMatch(/NaN|Infinity/)
   })
 })

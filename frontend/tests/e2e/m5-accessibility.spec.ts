@@ -19,6 +19,7 @@ const detail = {
   maximumHeartRate: 160,
   averageCadence: 84,
   calories: 300,
+  garminTrainingMetrics: { aerobicTrainingEffect: null, anaerobicTrainingEffect: null, trainingLoad: null },
   records: [
     { elapsedSeconds: 0, distanceMeters: 0, latitude: 50, longitude: 8, altitudeMeters: 100, speedMetersPerSecond: 2.5, heartRate: 130, cadence: 70 },
     { elapsedSeconds: 300, distanceMeters: 1000, latitude: 50.001, longitude: 8.001, altitudeMeters: 105, speedMetersPerSecond: 3.3, heartRate: 140, cadence: 82 },

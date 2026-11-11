@@ -18,6 +18,8 @@
         <MetricCard label="Kalorien" :value="detail.calories === null ? '–' : `${detail.calories} kcal`" />
       </dl>
 
+      <TrainingSummaryExport :detail="detail" />
+
       <section v-if="garminMetricsPresent" class="detail-panel" aria-labelledby="garmin-training-heading" data-testid="garmin-training-metrics">
         <h2 id="garmin-training-heading">Trainingsanalyse</h2>
         <dl class="metrics training-metrics">
@@ -75,6 +77,7 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { getActivity, type ActivityDetail } from '../api'
 import { chartSeries, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis } from '../activityDetail'
 import MetricCard from '../components/MetricCard.vue'
+import TrainingSummaryExport from '../components/TrainingSummaryExport.vue'
 
 echartsUse([LineChart, DataZoomComponent, GridComponent, TitleComponent, TooltipComponent, CanvasRenderer])
 
