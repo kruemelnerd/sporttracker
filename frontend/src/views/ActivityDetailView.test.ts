@@ -1,6 +1,6 @@
 import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ActivityDetailView from './ActivityDetailView.vue'
 
 const { getActivity } = vi.hoisted(() => ({ getActivity: vi.fn() }))
@@ -35,6 +35,7 @@ async function mountDetail() {
 
 describe('Activity detail view', () => {
   beforeEach(() => getActivity.mockReset().mockResolvedValue(noData))
+  afterEach(() => vi.unstubAllGlobals())
 
   it('labels metric groups and the table region while preserving optional and empty states', async () => {
     const wrapper = await mountDetail()
@@ -67,5 +68,37 @@ describe('Activity detail view', () => {
     expect(wrapper.text()).toContain('Trainingsbelastung')
     expect(wrapper.text()).toContain('175,5')
     expect(wrapper.text()).not.toContain('Anaerober Training Effect')
+  })
+
+  it('updates the preview for format and splits, and copies the complete selected content on click', async () => {
+    getActivity.mockResolvedValueOnce({ ...noData, activity: { ...noData.activity, distanceMeters: 5000, elapsedSeconds: 1800 }, laps: [{ lapNumber: 1, distanceMeters: 5000, durationSeconds: 1800, averageSpeedMetersPerSecond: null, averageHeartRate: null, averageCadence: null, ascentMeters: null, descentMeters: null }] })
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const wrapper = await mountDetail()
+    const preview = wrapper.get('[aria-label="Vorschau der Trainingszusammenfassung"]')
+
+    expect((wrapper.get('select[aria-label="Format"]').element as HTMLSelectElement).value).toBe('json')
+    expect((preview.element as HTMLTextAreaElement).value).toContain('"distance_km": 5')
+    expect((preview.element as HTMLTextAreaElement).value).not.toContain('"splits"')
+    await wrapper.get('select[aria-label="Format"]').setValue('yaml')
+    await wrapper.get('input[aria-label="Runden/Splits hinzufügen"]').setValue(true)
+    expect((preview.element as HTMLTextAreaElement).value).toContain('distance_km: 5')
+    expect((preview.element as HTMLTextAreaElement).value).toContain('splits:')
+
+    const selected = (preview.element as HTMLTextAreaElement).value
+    await wrapper.get('button[aria-label="Für ChatGPT kopieren"]').trigger('click')
+    await flushPromises()
+    expect(writeText).toHaveBeenCalledWith(selected)
+    expect(wrapper.get('[role="status"]').text()).toBe('Trainingszusammenfassung in die Zwischenablage kopiert.')
+  })
+
+  it('reports clipboard failures without claiming the copy succeeded', async () => {
+    vi.stubGlobal('navigator', { clipboard: { writeText: vi.fn().mockRejectedValue(new Error('denied')) } })
+    const wrapper = await mountDetail()
+    await wrapper.get('button[aria-label="Für ChatGPT kopieren"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('Kopieren nicht möglich')
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
   })
 })

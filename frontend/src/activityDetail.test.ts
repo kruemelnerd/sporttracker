@@ -168,9 +168,9 @@ describe('training summary export', () => {
   })
 
   it('exports recorded lap distance as recorded and never invents derived split heart rate', () => {
-    const recorded = { lapNumber: 3, distanceMeters: 995, durationSeconds: 360, averageSpeedMetersPerSecond: null, averageHeartRate: null, averageCadence: null, ascentMeters: null, descentMeters: null }
+    const recorded = { lapNumber: 3, distanceMeters: 1200, durationSeconds: 360, averageSpeedMetersPerSecond: null, averageHeartRate: null, averageCadence: null, ascentMeters: null, descentMeters: null }
     const recordedSummary = createTrainingSummary({ ...trainingDetail, laps: [recorded] }, true)
-    expect(recordedSummary.splits).toEqual([{ lap_number: 3, distance_km: 1, duration_sec: 360, avg_pace_sec_per_km: 362, source: 'recorded' }])
+    expect(recordedSummary.splits).toEqual([{ lap_number: 3, distance_km: 1.2, duration_sec: 360, avg_pace_sec_per_km: 300, source: 'recorded' }])
 
     const records = [
       { elapsedSeconds: 0, distanceMeters: 0, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: null, heartRate: 150, cadence: null },
@@ -180,6 +180,9 @@ describe('training summary export', () => {
     expect(derived).toHaveLength(21)
     expect(derived.at(-1)).toEqual({ lap_number: 21, distance_km: 1, duration_sec: 360, avg_pace_sec_per_km: 360, source: 'derived' })
     expect(derived.every((split) => !('avg_heart_rate_bpm' in split))).toBe(true)
+
+    const partial = createTrainingSummary({ ...trainingDetail, laps: [], records: [records[0], { ...records[1], elapsedSeconds: 900, distanceMeters: 2500 }] }, true).splits!
+    expect(partial.map(({ distance_km }) => distance_km)).toEqual([1, 1, 0.5])
   })
 
   it('omits splits when none can be derived and keeps disabled splits out', () => {
@@ -196,5 +199,11 @@ describe('training summary export', () => {
     expect(yaml).toContain('heart_rate_bpm:\n  avg: 149\n  max: 173')
     expect(json + yaml).not.toMatch(/latitude|longitude|records|api[_-]?key|file[_-]?path/i)
     expect(json + yaml).not.toMatch(/NaN|Infinity/)
+  })
+
+  it('omits non-finite Garmin values instead of emitting invalid JSON or YAML numbers', () => {
+    const summary = createTrainingSummary({ ...trainingDetail, garminTrainingMetrics: { aerobicTrainingEffect: Number.NaN, anaerobicTrainingEffect: null, trainingLoad: Number.POSITIVE_INFINITY } })
+    expect(summary).not.toHaveProperty('garmin')
+    expect(serializeTrainingSummaryJson(summary) + serializeTrainingSummaryYaml(summary)).not.toMatch(/NaN|Infinity/)
   })
 })

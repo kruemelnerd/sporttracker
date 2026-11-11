@@ -102,6 +102,7 @@ const detail = (id: number, withGps = false) => ({
   maximumHeartRate: 160,
   averageCadence: 84,
   calories: 300,
+  garminTrainingMetrics: { aerobicTrainingEffect: null, anaerobicTrainingEffect: null, trainingLoad: null },
   records: [
     { elapsedSeconds: 0, distanceMeters: 0, latitude: withGps ? 50 : null, longitude: withGps ? 8 : null, altitudeMeters: 100, speedMetersPerSecond: null, heartRate: 130, cadence: 70 },
     { elapsedSeconds: 253.02, distanceMeters: 100, latitude: withGps ? 50.001 : null, longitude: withGps ? 8.001 : null, altitudeMeters: 101, speedMetersPerSecond: null, heartRate: 132, cadence: 72 },
@@ -152,6 +153,28 @@ test('activity detail retains map, charts and labelled laps across mobile and ta
     const canvas = element.querySelector('canvas')
     return canvas && element.clientWidth > 0 ? Math.abs(element.clientWidth - canvas.clientWidth) : Infinity
   })).toBeLessThanOrEqual(1)
+})
+
+test('training summary is usable and copies only selected metrics on mobile', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.route('**/api/activities/23', (route) => route.fulfill({ json: detail(23, true) }))
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/activities/23')
+
+  const summary = page.getByRole('region', { name: 'Trainingszusammenfassung' })
+  await expect(summary).toBeVisible()
+  await summary.getByLabel('Format').selectOption('yaml')
+  await summary.getByLabel('Runden/Splits hinzufügen').check()
+  const preview = summary.getByLabel('Vorschau der Trainingszusammenfassung')
+  await expect(preview).toHaveValue(/splits:/)
+  await summary.getByRole('button', { name: 'Für ChatGPT kopieren' }).click()
+  const copied = await page.evaluate(() => navigator.clipboard.readText())
+  expect(copied).toBe(await preview.inputValue())
+  expect(copied).not.toContain('latitude')
+  expect(copied).not.toContain('longitude')
+  expect(copied).not.toContain('```')
+  await expect(summary.getByRole('status')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
 })
 
 test('unknown activity URL shows a clear not-found message', async ({ page }) => {

@@ -53,11 +53,12 @@
 - Modify: `README.md`
 
 **Interfaces:**
-- Component receives `detail: ActivityDetail` and `splits: LapRow[]`.
+- Component receives `detail: ActivityDetail`; its split toggle uses `createTrainingSummary` and the shared `lapRows()` processing directly.
 - Default format is JSON; default split selection is off.
 
-- [ ] Test preview updates, JSON/YAML choice, split toggle, successful clipboard copy, and clipboard error feedback.
-- [ ] Implement labelled native controls, accessible preview, responsive layout, and explicit click-only clipboard copying.
-- [ ] Add a Playwright mobile-width check for no horizontal overflow and copy/selection interaction.
-- [ ] Document exported fields, format choice, optional splits, missing values, privacy, and a compact example.
-- [ ] Run frontend unit tests, typecheck, production build, full test script, and inspect the final diff.
+- [x] Test preview updates, JSON/YAML choice, split toggle, successful clipboard copy, and clipboard error feedback.
+- [x] Implement labelled native controls, accessible preview, responsive layout, and explicit click-only clipboard copying.
+- [x] Add a Playwright mobile-width check for no horizontal overflow and copy/selection interaction.
+- [x] Document exported fields, format choice, optional splits, missing values, privacy, and a compact example.
+- [x] Run frontend unit tests (114 passed), typecheck, production build, `./scripts/test-all.sh` (backend, frontend, Playwright 20/20), and inspect the final diff.
+- [x] Commit Task 2 as `feat: add activity training summary export controls`.

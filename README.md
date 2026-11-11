@@ -206,6 +206,29 @@ Bei unterschiedlichen Digests und gültigen, unterschiedlichen vollständigen Co
 
 Pro Prüfversuch erfolgt höchstens eine GitHub-Anfrage ohne Token, automatische Wiederholung, Redirects oder weitere Pagination; die Antwortgröße ist auf 1 MiB begrenzt. Die GitHub-Verbindungs- und Antworttimeouts betragen standardmäßig zwei bzw. drei Sekunden (`running-dashboard.github.connect-timeout` / `running-dashboard.github.read-timeout`). Dieser Metadaten- und Abstammungsvergleich ersetzt weder Release-Verifikation noch ein manuelles Produktionsupdate; ein Update wird nicht automatisch ausgeführt.
 
+## Trainingszusammenfassung kopieren
+
+Auf einer Aktivitätsdetailseite erstellt **Trainingszusammenfassung** eine kompakte Vorschau, die per **Für ChatGPT kopieren** erst nach einem Klick in die lokale Zwischenablage kopiert wird. Es findet keine Verbindung zu ChatGPT oder einem anderen externen Dienst statt.
+
+Wählbar sind JSON und YAML; beide enthalten dieselben Daten: Schema-Version, Sportart, lokales Kalenderdatum des Aktivitätsstarts, Distanz, Gesamt- und Bewegungszeit, Pace, Herzfrequenz, Kadenz, Anstieg sowie vorhandene Garmin Aerobic/Anaerobic Training Effects und Training Load. Die Pace verwendet wie die Aktivitätsdetailseite Gesamtzeit geteilt durch Gesamtdistanz. Kadenz wird einmal von FIT-Schritten pro Schrittzyklus in `steps/min` umgerechnet. Fehlende Werte werden weggelassen, gemessene Nullwerte bleiben erhalten.
+
+Optional fügt **Runden/Splits hinzufügen** aufgezeichnete Runden mit ihrer tatsächlichen Distanz oder zuverlässig aus Messpunkten abgeleitete Kilometer-Splits hinzu. Abgeleitete Splits enthalten keine Herzfrequenz. Nicht zuverlässig verfügbare Splits werden ausgelassen. Exportiert werden keine GPS-Koordinaten oder Streckenverläufe, FIT-Rohdaten, Dateipfade, Zugangsdaten oder persönlichen Kontodaten.
+
+Beispiel (gekürzt):
+
+```json
+{
+  "schema_version": 1,
+  "sport": "running",
+  "date": "2026-11-10",
+  "distance_km": 10.04,
+  "elapsed_sec": 3630,
+  "avg_pace_sec_per_km": 362,
+  "heart_rate_bpm": { "avg": 149, "max": 172 },
+  "garmin": { "aerobic_training_effect": 3.4, "training_load": 126 }
+}
+```
+
 ## Stoppen und Zurücksetzen
 
 ```bash
