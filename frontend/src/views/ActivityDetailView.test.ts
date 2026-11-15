@@ -3,8 +3,38 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ActivityDetailView from './ActivityDetailView.vue'
 
-const { getActivity } = vi.hoisted(() => ({ getActivity: vi.fn() }))
+const { getActivity, chartsMock } = vi.hoisted(() => {
+  const instances: Array<Record<string, any>> = []
+  const chartsMock = {
+    instances,
+    connect: vi.fn(),
+    use: vi.fn(),
+    init: vi.fn((element: HTMLElement) => {
+      let clickHandler: ((event: { offsetX: number; offsetY: number }) => void) | undefined
+      const instance: Record<string, any> = {
+        options: null,
+        getDom: () => element,
+        setOption: vi.fn((options) => { instance.options = options }),
+        dispatchAction: vi.fn(),
+        dispose: vi.fn(),
+        resize: vi.fn(),
+        containPixel: vi.fn(() => true),
+        convertFromPixel: vi.fn(() => [75, 150]),
+        getZr: () => ({ on: vi.fn((_event: string, handler: typeof clickHandler) => { clickHandler = handler }) }),
+        click: (event = { offsetX: 100, offsetY: 100 }) => clickHandler?.(event),
+      }
+      instances.push(instance)
+      return instance
+    }),
+  }
+  return { getActivity: vi.fn(), chartsMock }
+})
 vi.mock('../api', () => ({ getActivity }))
+vi.mock('echarts/core', () => ({
+  connect: chartsMock.connect,
+  init: chartsMock.init,
+  use: chartsMock.use,
+}))
 
 const noData = {
   activity: { id: 4, sport: 'running', subSport: null, startTime: '2026-10-12T10:00:00Z', elapsedSeconds: null, distanceMeters: null, averageHeartRate: null, ascentMeters: null },
@@ -34,8 +64,50 @@ async function mountDetail() {
   return wrapper
 }
 
+function interactiveDetail() {
+  const records = [0, 50, 100, 150, 200].map((x) => ({
+    elapsedSeconds: x,
+    distanceMeters: x,
+    latitude: null,
+    longitude: null,
+    altitudeMeters: 10,
+    speedMetersPerSecond: 3,
+    heartRate: 140,
+    cadence: 80,
+    stepLengthMeters: null,
+    verticalOscillationCentimeters: null,
+    verticalRatioPercent: null,
+    groundContactTimeMilliseconds: null,
+    groundContactBalancePercent: null,
+    temperatureCelsius: null,
+    powerWatts: 200,
+  }))
+  return {
+    ...noData,
+    activity: { ...noData.activity, elapsedSeconds: 200, distanceMeters: 200 },
+    records,
+    laps: [
+      { lapNumber: 1, durationSeconds: 100, distanceMeters: 50, averageSpeedMetersPerSecond: 3, averageHeartRate: 140, averageCadence: 80, ascentMeters: null, descentMeters: null, workoutStepIndex: 0, repetitionNumber: 1, startElapsedSeconds: 50, endElapsedSeconds: 100, startDistanceMeters: 50, endDistanceMeters: 100 },
+      { lapNumber: 2, durationSeconds: 60, distanceMeters: 50, averageSpeedMetersPerSecond: 3, averageHeartRate: 140, averageCadence: 80, ascentMeters: null, descentMeters: null, workoutStepIndex: 1, repetitionNumber: 1, startElapsedSeconds: 100, endElapsedSeconds: 150, startDistanceMeters: 100, endDistanceMeters: 150 },
+    ],
+    workoutSteps: [
+      { stepIndex: 0, name: 'Schnell', durationType: 'time', plannedDurationSeconds: 100, plannedDistanceMeters: null, repeatFromStepIndex: null, repeatCount: null, intensity: 'active', targetType: 'speed', targetZone: null, targetLow: 3.077, targetHigh: 3.175, targetUnit: 'm/s' },
+      { stepIndex: 1, name: 'Erholung', durationType: 'time', plannedDurationSeconds: 60, plannedDistanceMeters: null, repeatFromStepIndex: null, repeatCount: null, intensity: 'recovery' },
+    ],
+  }
+}
+
 describe('Activity detail view', () => {
-  beforeEach(() => getActivity.mockReset().mockResolvedValue(noData))
+  beforeEach(() => {
+    getActivity.mockReset().mockResolvedValue(noData)
+    chartsMock.instances.splice(0)
+    chartsMock.init.mockClear()
+    chartsMock.connect.mockClear()
+    vi.stubGlobal('ResizeObserver', class {
+      observe() {}
+      disconnect() {}
+    })
+  })
   afterEach(() => vi.unstubAllGlobals())
 
   it('labels metric groups and the table region while preserving optional and empty states', async () => {
@@ -108,6 +180,47 @@ describe('Activity detail view', () => {
     expect(table.findAll('tbody tr').map((row) => row.find('td').text())).toEqual(['1', '2', '3'])
     await wrapper.get('select[aria-label="Sortierrichtung"]').setValue('asc')
     expect(table.findAll('tbody tr').map((row) => row.find('td').text())).toEqual(['3', '2', '1'])
+  })
+
+  it('selects a stable workout row after sorting and resets the synchronized zoom', async () => {
+    getActivity.mockResolvedValueOnce(interactiveDetail())
+    const wrapper = await mountDetail()
+    const rows = () => wrapper.findAll('[data-testid="workout-intervals"] tbody tr')
+
+    expect(wrapper.get('[data-testid="workout-intervals"]').text()).toContain('Pace: 5:15–5:25 min/km')
+    await wrapper.get('select[aria-label="Workout sortieren nach"]').setValue('duration')
+    await wrapper.get('select[aria-label="Sortierrichtung"]').setValue('desc')
+    const selected = rows().find((row) => row.text().includes('Schnell'))!
+    await selected.trigger('click')
+
+    expect(selected.attributes('aria-selected')).toBe('true')
+    expect(selected.classes()).toContain('selected')
+    expect(chartsMock.instances.length).toBeGreaterThan(1)
+    expect(chartsMock.instances.every((chart) => chart.dispatchAction.mock.calls.some((call: any[]) =>
+      call[0].type === 'dataZoom' && call[0].startValue === 47.5 && call[0].endValue === 102.5))).toBe(true)
+
+    await wrapper.get('button[aria-label="Gesamtes Training anzeigen"]').trigger('click')
+    expect(rows().every((row) => row.attributes('aria-selected') === 'false')).toBe(true)
+    expect(chartsMock.instances.every((chart) => chart.dispatchAction.mock.calls.some((call: any[]) =>
+      call[0].type === 'dataZoom' && call[0].startValue === 0 && call[0].endValue === 200))).toBe(true)
+  })
+
+  it('adds target bands and selects the interval from a chart x-axis click with an Ist/Ziel tooltip', async () => {
+    getActivity.mockResolvedValueOnce(interactiveDetail())
+    const wrapper = await mountDetail()
+    const pace = chartsMock.instances.find((chart) => chart.getDom().dataset.testid === 'pace-chart')!
+    expect(pace.options.series[0].markLine.data).toHaveLength(2)
+    expect(pace.options.series[0].markArea.data.some((area: Array<{ xAxis: number; yAxis?: number }>) =>
+      area[0].xAxis === 50 && area[0].yAxis !== undefined && area[1].xAxis === 100 && area[1].yAxis !== undefined)).toBe(true)
+    const tooltip = pace.options.tooltip.formatter([{ data: [75, 340] }])
+    expect(tooltip).toContain('Ist: 5:40 min/km')
+    expect(tooltip).toContain('Ziel: 5:15–5:25 min/km')
+
+    pace.click()
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="workout-intervals"] tbody tr')[0].attributes('aria-selected')).toBe('true')
+    expect(chartsMock.instances.every((chart) => chart.dispatchAction.mock.calls.some((call: any[]) =>
+      call[0].type === 'dataZoom' && call[0].startValue === 47.5 && call[0].endValue === 102.5))).toBe(true)
   })
 
   it('shows only available Garmin training metrics and hides the section when all are absent', async () => {
