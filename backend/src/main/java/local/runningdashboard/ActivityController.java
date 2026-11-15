@@ -58,12 +58,14 @@ public class ActivityController {
                         result.getObject("workout_step_index", Integer.class), result.getObject("repetition_number", Integer.class),
                         result.getObject("start_elapsed_seconds", Double.class), result.getObject("end_elapsed_seconds", Double.class),
                         result.getObject("start_distance_meters", Double.class), result.getObject("end_distance_meters", Double.class)), id);
-        List<WorkoutStep> workoutSteps = jdbc.query("SELECT step_index, step_name, duration_type, planned_duration_seconds, planned_distance_meters, repeat_from_step_index, repeat_count, intensity FROM activity_workout_step WHERE activity_id = ? ORDER BY step_index",
+        List<WorkoutStep> workoutSteps = jdbc.query("SELECT step_index, step_name, duration_type, planned_duration_seconds, planned_distance_meters, repeat_from_step_index, repeat_count, intensity, target_type, target_zone, target_low, target_high, target_unit FROM activity_workout_step WHERE activity_id = ? ORDER BY step_index",
                 (result, row) -> new WorkoutStep(result.getInt("step_index"), result.getString("step_name"),
                         result.getString("duration_type"), result.getObject("planned_duration_seconds", Double.class),
                         result.getObject("planned_distance_meters", Double.class),
                         result.getObject("repeat_from_step_index", Integer.class), result.getObject("repeat_count", Integer.class),
-                        result.getString("intensity")), id);
+                        result.getString("intensity"), result.getString("target_type"),
+                        result.getObject("target_zone", Integer.class), result.getObject("target_low", Double.class),
+                        result.getObject("target_high", Double.class), result.getString("target_unit")), id);
         List<Pause> pauses = jdbc.query("SELECT start_elapsed_seconds, end_elapsed_seconds FROM activity_pause WHERE activity_id = ? ORDER BY pause_number",
                 (result, row) -> new Pause(result.getDouble("start_elapsed_seconds"), result.getDouble("end_elapsed_seconds")), id);
         return new ActivityDetail(activity.activity(), activity.movingSeconds(), activity.averageSpeedMetersPerSecond(), activity.maximumHeartRate(), activity.averageCadence(), activity.calories(), activity.garminTrainingMetrics(), activity.garminActivityMetrics(), records, laps, workoutSteps, pauses);
@@ -124,7 +126,8 @@ public class ActivityController {
                       Double endElapsedSeconds, Double startDistanceMeters, Double endDistanceMeters) { }
     public record WorkoutStep(int stepIndex, String name, String durationType, Double plannedDurationSeconds,
                               Double plannedDistanceMeters, Integer repeatFromStepIndex, Integer repeatCount,
-                              String intensity) { }
+                              String intensity, String targetType, Integer targetZone, Double targetLow,
+                              Double targetHigh, String targetUnit) { }
     public record Pause(Double startElapsedSeconds, Double endElapsedSeconds) { }
     public record GarminTrainingMetrics(Double aerobicTrainingEffect, Double anaerobicTrainingEffect, Double trainingLoad) { }
     public record GarminActivityMetrics(String activityName, Double averageSpeedMetersPerSecond) { }

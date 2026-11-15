@@ -191,9 +191,10 @@ public class ImportService {
         jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes, source) VALUES (?, ?, ?, ?)", activityId, hash, sizeBytes, source);
         insertRecords(activityId, decoded.records());
         for (GarminFitFixtureAdapter.DecodedWorkoutStep step : decoded.workoutSteps()) {
-            jdbc.update("INSERT INTO activity_workout_step (activity_id, step_index, step_name, duration_type, planned_duration_seconds, planned_distance_meters, repeat_from_step_index, repeat_count, intensity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            jdbc.update("INSERT INTO activity_workout_step (activity_id, step_index, step_name, duration_type, planned_duration_seconds, planned_distance_meters, repeat_from_step_index, repeat_count, intensity, target_type, target_zone, target_low, target_high, target_unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     activityId, step.stepIndex(), step.name(), step.durationType(), step.plannedDurationSeconds(),
-                    step.plannedDistanceMeters(), step.repeatFromStepIndex(), step.repeatCount(), step.intensity());
+                    step.plannedDistanceMeters(), step.repeatFromStepIndex(), step.repeatCount(), step.intensity(),
+                    step.targetType(), step.targetZone(), step.targetLow(), step.targetHigh(), step.targetUnit());
         }
         insertLaps(activityId, decoded.laps());
         int pauseNumber = 1;
@@ -223,9 +224,10 @@ public class ImportService {
         }
 
         for (GarminFitFixtureAdapter.DecodedWorkoutStep step : decoded.workoutSteps()) {
-            jdbc.update("INSERT INTO activity_workout_step (activity_id, step_index, step_name, duration_type, planned_duration_seconds, planned_distance_meters, repeat_from_step_index, repeat_count, intensity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (activity_id, step_index) DO UPDATE SET step_name = COALESCE(activity_workout_step.step_name, EXCLUDED.step_name), duration_type = COALESCE(activity_workout_step.duration_type, EXCLUDED.duration_type), planned_duration_seconds = COALESCE(activity_workout_step.planned_duration_seconds, EXCLUDED.planned_duration_seconds), planned_distance_meters = COALESCE(activity_workout_step.planned_distance_meters, EXCLUDED.planned_distance_meters), repeat_from_step_index = COALESCE(activity_workout_step.repeat_from_step_index, EXCLUDED.repeat_from_step_index), repeat_count = COALESCE(activity_workout_step.repeat_count, EXCLUDED.repeat_count), intensity = COALESCE(activity_workout_step.intensity, EXCLUDED.intensity)",
+            jdbc.update("INSERT INTO activity_workout_step (activity_id, step_index, step_name, duration_type, planned_duration_seconds, planned_distance_meters, repeat_from_step_index, repeat_count, intensity, target_type, target_zone, target_low, target_high, target_unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (activity_id, step_index) DO UPDATE SET step_name = COALESCE(activity_workout_step.step_name, EXCLUDED.step_name), duration_type = COALESCE(activity_workout_step.duration_type, EXCLUDED.duration_type), planned_duration_seconds = COALESCE(activity_workout_step.planned_duration_seconds, EXCLUDED.planned_duration_seconds), planned_distance_meters = COALESCE(activity_workout_step.planned_distance_meters, EXCLUDED.planned_distance_meters), repeat_from_step_index = COALESCE(activity_workout_step.repeat_from_step_index, EXCLUDED.repeat_from_step_index), repeat_count = COALESCE(activity_workout_step.repeat_count, EXCLUDED.repeat_count), intensity = COALESCE(activity_workout_step.intensity, EXCLUDED.intensity), target_type = COALESCE(activity_workout_step.target_type, EXCLUDED.target_type), target_zone = COALESCE(activity_workout_step.target_zone, EXCLUDED.target_zone), target_low = COALESCE(activity_workout_step.target_low, EXCLUDED.target_low), target_high = COALESCE(activity_workout_step.target_high, EXCLUDED.target_high), target_unit = COALESCE(activity_workout_step.target_unit, EXCLUDED.target_unit)",
                     activityId, step.stepIndex(), step.name(), step.durationType(), step.plannedDurationSeconds(),
-                    step.plannedDistanceMeters(), step.repeatFromStepIndex(), step.repeatCount(), step.intensity());
+                    step.plannedDistanceMeters(), step.repeatFromStepIndex(), step.repeatCount(), step.intensity(),
+                    step.targetType(), step.targetZone(), step.targetLow(), step.targetHigh(), step.targetUnit());
         }
 
         int storedPauses = jdbc.queryForObject("SELECT count(*) FROM activity_pause WHERE activity_id = ?", Integer.class, activityId);

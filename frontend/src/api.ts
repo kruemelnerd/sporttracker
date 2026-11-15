@@ -88,6 +88,11 @@ export type WorkoutStep = {
   repeatFromStepIndex: number | null
   repeatCount: number | null
   intensity: string | null
+  targetType?: string | null
+  targetZone?: number | null
+  targetLow?: number | null
+  targetHigh?: number | null
+  targetUnit?: string | null
 }
 
 export type ActivityPause = {

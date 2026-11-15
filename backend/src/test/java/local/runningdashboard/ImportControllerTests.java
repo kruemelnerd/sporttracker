@@ -93,7 +93,7 @@ class ImportControllerTests {
         jdbc.update("UPDATE activity_record SET altitude_meters = NULL WHERE activity_id = ?", activityId);
         jdbc.update("UPDATE activity_record SET step_length_m = 1.234, vertical_oscillation_cm = 7.8, vertical_ratio_percent = 8.3, ground_contact_time_ms = 240, ground_contact_balance_percent = 49.7, temperature_celsius = 12, power_watts = 250 WHERE activity_id = ? AND record_index = 0", activityId);
         jdbc.update("UPDATE lap SET workout_step_index = 0, repetition_number = 1, start_elapsed_seconds = 0, end_elapsed_seconds = 900, start_distance_meters = 0, end_distance_meters = 2500 WHERE activity_id = ?", activityId);
-        jdbc.update("INSERT INTO activity_workout_step (activity_id, step_index, step_name, duration_type, planned_distance_meters, intensity) VALUES (?, 0, 'Fast', 'distance', 2500, 'active')", activityId);
+        jdbc.update("INSERT INTO activity_workout_step (activity_id, step_index, step_name, duration_type, planned_distance_meters, intensity, target_type, target_low, target_high, target_unit) VALUES (?, 0, 'Fast', 'distance', 2500, 'active', 'heart_rate', 135, 155, 'bpm')", activityId);
         jdbc.update("INSERT INTO activity_pause (activity_id, pause_number, start_elapsed_seconds, end_elapsed_seconds) VALUES (?, 1, 100, 120)", activityId);
         jdbc.update("UPDATE activity SET garmin_training_effect = 0, garmin_anaerobic_training_effect = 2.5, garmin_activity_training_load = 150 WHERE id = ?", activityId);
 
@@ -118,6 +118,11 @@ class ImportControllerTests {
                 .andExpect(jsonPath("$.laps[0].workoutStepIndex").value(0))
                 .andExpect(jsonPath("$.laps[0].startDistanceMeters").value(0d))
                 .andExpect(jsonPath("$.workoutSteps[0].name").value("Fast"))
+                .andExpect(jsonPath("$.workoutSteps[0].intensity").value("active"))
+                .andExpect(jsonPath("$.workoutSteps[0].targetType").value("heart_rate"))
+                .andExpect(jsonPath("$.workoutSteps[0].targetLow").value(135d))
+                .andExpect(jsonPath("$.workoutSteps[0].targetHigh").value(155d))
+                .andExpect(jsonPath("$.workoutSteps[0].targetUnit").value("bpm"))
                 .andExpect(jsonPath("$.pauses[0].endElapsedSeconds").value(120d));
         assertEquals(10d, jdbc.queryForObject("SELECT altitude_meters FROM activity_record WHERE activity_id = ? AND record_index = 0", Double.class, activityId));
     }

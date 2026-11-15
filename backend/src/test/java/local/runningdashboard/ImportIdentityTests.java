@@ -108,7 +108,7 @@ class ImportIdentityTests {
         var lap = new GarminFitFixtureAdapter.DecodedLap(1, 10d, 400d, null, null, null, null, null,
                 1, 1, 0d, 10d, 0d, 400d);
         var step = new GarminFitFixtureAdapter.DecodedWorkoutStep(1, "Fast", "distance", null, 400d,
-                null, null, "active");
+                null, null, "active", null, null, null, null, null);
         var pause = new GarminFitFixtureAdapter.DecodedPause(12d, 15d);
         var decoded = new GarminFitFixtureAdapter.DecodedActivity("running", null, start, 30d, 27d,
                 1500d, null, null, null, null, null, null, List.of(record), List.of(lap),
@@ -147,7 +147,7 @@ class ImportIdentityTests {
         var lap = new GarminFitFixtureAdapter.DecodedLap(1, 10d, 400d, null, null, null, null, null,
                 1, 1, 0d, 10d, 0d, 400d);
         var step = new GarminFitFixtureAdapter.DecodedWorkoutStep(1, "Fast", "distance", null, 400d,
-                null, null, "active");
+                null, null, "active", null, null, null, null, null);
         var sparse = new GarminFitFixtureAdapter.DecodedActivity("running", null, start, 30d, 27d, 1500d,
                 null, null, null, null, null, null, List.of(sparseRecord), List.of(), List.of(), List.of());
         var rich = new GarminFitFixtureAdapter.DecodedActivity("running", null, start, 30d, 27d, 1500d,

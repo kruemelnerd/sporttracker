@@ -70,11 +70,44 @@ describe('Activity detail view', () => {
     const wrapper = await mountDetail()
 
     expect(wrapper.find('[data-testid="workout-intervals"]').text()).toContain('Schnell')
-    expect(wrapper.find('[data-testid="workout-intervals"]').text()).toContain('Wiederholung 1')
+    expect(wrapper.find('[data-testid="workout-intervals"] tbody tr').text()).toContain('1')
     expect(wrapper.find('[data-testid="timer-pauses"]').text()).toContain('00:02:10')
     expect(wrapper.find('[data-testid="timer-pauses"]').text()).toContain('00:02:25')
     expect(wrapper.find('[data-testid="laps"]').text()).toContain('2')
     expect(wrapper.find('[data-testid="laps"]').text()).not.toContain('Schnell')
+  })
+
+  it('shows only executed workout laps, excludes repeat controls, and supports manual sorting', async () => {
+    getActivity.mockResolvedValueOnce({
+      ...noData,
+      laps: [
+        { lapNumber: 3, distanceMeters: 500, durationSeconds: 180, averageSpeedMetersPerSecond: null, averageHeartRate: 140, averageCadence: null, ascentMeters: null, descentMeters: null, workoutStepIndex: 2, repetitionNumber: 1, startElapsedSeconds: 300, endElapsedSeconds: 480, startDistanceMeters: 1500, endDistanceMeters: 2000 },
+        { lapNumber: 1, distanceMeters: 1000, durationSeconds: 360, averageSpeedMetersPerSecond: null, averageHeartRate: 130, averageCadence: null, ascentMeters: null, descentMeters: null, workoutStepIndex: 0, repetitionNumber: null, startElapsedSeconds: 0, endElapsedSeconds: 360, startDistanceMeters: 0, endDistanceMeters: 1000 },
+        { lapNumber: 2, distanceMeters: 1000, durationSeconds: 240, averageSpeedMetersPerSecond: null, averageHeartRate: 155, averageCadence: null, ascentMeters: null, descentMeters: null, workoutStepIndex: 1, repetitionNumber: 1, startElapsedSeconds: 120, endElapsedSeconds: 360, startDistanceMeters: 500, endDistanceMeters: 1500 },
+      ],
+      workoutSteps: [
+        { stepIndex: 0, name: null, durationType: 'distance', plannedDurationSeconds: null, plannedDistanceMeters: 1000, repeatFromStepIndex: null, repeatCount: null, intensity: 'warmup' },
+        { stepIndex: 1, name: null, durationType: 'distance', plannedDurationSeconds: null, plannedDistanceMeters: 1000, repeatFromStepIndex: null, repeatCount: null, intensity: 'active', targetType: 'heart_rate', targetZone: null, targetLow: 150, targetHigh: 165, targetUnit: 'bpm' },
+        { stepIndex: 2, name: null, durationType: 'distance', plannedDurationSeconds: null, plannedDistanceMeters: 500, repeatFromStepIndex: null, repeatCount: null, intensity: 'recovery' },
+        { stepIndex: 3, name: null, durationType: 'repeat_until_steps_cmplt', plannedDurationSeconds: null, plannedDistanceMeters: null, repeatFromStepIndex: 1, repeatCount: 3, intensity: null },
+        { stepIndex: 4, name: null, durationType: 'distance', plannedDurationSeconds: null, plannedDistanceMeters: 1000, repeatFromStepIndex: null, repeatCount: null, intensity: 'cooldown' },
+      ],
+    })
+    const wrapper = await mountDetail()
+    const table = wrapper.get('[data-testid="workout-intervals"] table')
+
+    expect(table.text()).toContain('Einlaufen')
+    expect(table.text()).toContain('Belastung')
+    expect(table.text()).toContain('Erholung')
+    expect(table.text()).toContain('150–165 bpm')
+    expect(table.text()).not.toContain('repeat_until_steps_cmplt')
+    expect(table.findAll('tbody tr').map((row) => row.find('td').text())).toEqual(['1', '2', '3'])
+
+    await wrapper.get('select[aria-label="Workout sortieren nach"]').setValue('duration')
+    await wrapper.get('select[aria-label="Sortierrichtung"]').setValue('desc')
+    expect(table.findAll('tbody tr').map((row) => row.find('td').text())).toEqual(['1', '2', '3'])
+    await wrapper.get('select[aria-label="Sortierrichtung"]').setValue('asc')
+    expect(table.findAll('tbody tr').map((row) => row.find('td').text())).toEqual(['3', '2', '1'])
   })
 
   it('shows only available Garmin training metrics and hides the section when all are absent', async () => {
