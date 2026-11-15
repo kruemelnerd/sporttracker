@@ -194,11 +194,16 @@ docker compose --env-file /etc/sporttracker/production.env -p sporttracker-prod 
   -f compose.production.yaml -f compose.production.garmin.yaml restart app
 ```
 
-Zum bewussten Deaktivieren `GARMIN_PRODUCTION_ENABLED=false` in der privaten Datei setzen und den Container mit dem Basis-Compose neu erstellen (kein Volume löschen):
+Zum bewussten Deaktivieren `GARMIN_PRODUCTION_ENABLED=false` in der privaten Datei setzen und denselben verifizierten Updateablauf mit dem aktuellen Digest starten. So bleiben Pflicht-Backup, Releaseprüfung und Healthcheck auch bei einer reinen Konfigurationsänderung erhalten (kein Volume löschen):
 
 ```bash
-docker compose --env-file /etc/sporttracker/production.env -p sporttracker-prod \
-  -f compose.production.yaml up -d --wait app
+cd /opt/sporttracker
+current_digest=$(sed -n 's/^SPORTTRACKER_IMAGE_DIGEST=//p' /etc/sporttracker/production.env)
+bash scripts/update-production.sh \
+  --env-file /etc/sporttracker/production.env \
+  --project sporttracker-prod \
+  --backup-dir /var/backups/sporttracker \
+  "ghcr.io/kruemelnerd/sporttracker@$current_digest"
 ```
 
 Der Key bleibt außerhalb von Backups/Metadaten. Für die Wiederherstellung auf isolierte neue Ressourcen müssen Betriebsmodus und Secret separat bereitgestellt und – falls Garmin auch dort aktiv sein soll – der Override zur verwendeten Compose-Datei hinzugefügt werden. Automatische Syncs starten nach dem App-Start und danach standardmäßig alle 30 Minuten. In **Import → Garmin Connect** sind letzter Versuch, letzter Erfolg, letztes Ergebnis und Scheduler-Zustand getrennt sichtbar; `GET /api/imports/garmin/status` enthält keine Zugangsdaten. Bei Fehlern `ps`/Health und lokale App-Logs prüfen, Logs vor Weitergabe bereinigen und `retryAfterUntil` beachten. Mehr als 60 Minuten ohne automatischen Trigger wird nur bei aktivierter, vollständiger und nicht rate-limitierten Integration gewarnt.
