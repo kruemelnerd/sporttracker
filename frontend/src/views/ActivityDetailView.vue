@@ -48,6 +48,11 @@
 
       <section class="detail-panel" aria-labelledby="charts-heading">
         <h2 id="charts-heading">Trainingsverlauf</h2>
+        <ul v-if="workoutLegend.length" class="phase-legend" aria-label="Trainingsphasen">
+          <li v-for="phase in workoutLegend" :key="phase.label">
+            <span :style="{ backgroundColor: phase.color }" aria-hidden="true"></span>{{ phase.label }}
+          </li>
+        </ul>
         <p v-if="!charts.pace.length">Für diesen Lauf sind keine Messpunkte vorhanden.</p>
         <div v-else class="charts">
           <div v-if="hasValues(charts.pace)" ref="paceElement" class="chart" data-testid="pace-chart" role="img" :aria-label="`Pace-Diagramm (${charts.pace.filter(([, value]) => value !== null).length} Werte)`"></div>
@@ -66,15 +71,36 @@
 
       <section v-if="intervalRows.length" class="detail-panel" aria-labelledby="intervals-heading" data-testid="workout-intervals">
         <h2 id="intervals-heading">Workout-Intervalle</h2>
+        <div class="sort-controls">
+          <label>Sortieren nach
+            <select v-model="intervalSort" aria-label="Workout sortieren nach">
+              <option value="execution">Ausführungsreihenfolge</option>
+              <option value="step">Workout-Schritt</option>
+              <option value="duration">Dauer</option>
+              <option value="distance">Distanz</option>
+              <option value="pace">Ø Pace</option>
+            </select>
+          </label>
+          <label>Richtung
+            <select v-model="intervalDirection" aria-label="Sortierrichtung">
+              <option value="asc">Aufsteigend</option>
+              <option value="desc">Absteigend</option>
+            </select>
+          </label>
+        </div>
+        <p v-if="unmatchedStepCount" class="muted">{{ unmatchedStepCount }} Workout-Schritt(e) ohne zugeordnete Ausführungsrunde werden nicht als ausgeführt dargestellt.</p>
         <div class="table-wrap" role="region" aria-label="Workout-Intervalltabelle; horizontal scrollbar auf kleinen Bildschirmen" tabindex="0">
           <table>
-            <thead><tr><th>Phase</th><th>Ausführung</th><th>Distanz</th><th>Dauer</th><th>Vorgabe</th></tr></thead>
-            <tbody><tr v-for="interval in intervalRows" :key="`${interval.stepIndex}-${interval.lapNumber ?? 'planned'}`">
-              <td>{{ interval.name }}</td>
-              <td>{{ interval.lapNumber === null ? 'Keine zugeordnete Runde' : `Runde ${interval.lapNumber}${interval.repetitionNumber === null ? '' : ` · Wiederholung ${interval.repetitionNumber}`}` }}</td>
-              <td>{{ distance(interval.lap?.distanceMeters ?? interval.plannedDistanceMeters) }}</td>
-              <td>{{ duration(interval.lap?.durationSeconds ?? interval.plannedDurationSeconds) }}</td>
-              <td>{{ interval.durationType === 'distance' ? 'Distanz' : interval.durationType === 'time' ? 'Zeit' : interval.durationType ?? '–' }}</td>
+            <thead><tr><th>Nr.</th><th>Trainingsphase</th><th>Wiederholung</th><th>Distanz</th><th>Dauer</th><th>Ø Pace</th><th>Ø HF</th><th>Trainingsziel</th></tr></thead>
+            <tbody><tr v-for="interval in sortedIntervalRows" :key="`${interval.executionOrder}-${interval.lapNumber}`">
+              <td>{{ interval.executionOrder + 1 }}</td>
+              <td>{{ interval.phaseName }}</td>
+              <td>{{ interval.repetitionNumber === null ? '–' : `${interval.repetitionNumber}${interval.repeatBlockCount === null ? '' : ` von ${interval.repeatBlockCount}`}` }}</td>
+              <td>{{ distance(interval.distanceMeters) }}</td>
+              <td>{{ formatWorkoutDuration(interval.durationSeconds) }}</td>
+              <td>{{ formatPace(interval.averagePaceSecondsPerKm) }}</td>
+              <td>{{ bpm(interval.averageHeartRate) }}</td>
+              <td>{{ formatWorkoutTarget(interval.target) ?? '–' }}</td>
             </tr></tbody>
           </table>
         </div>
@@ -115,6 +141,7 @@ import { DataZoomComponent, GridComponent, MarkAreaComponent, TitleComponent, To
 import { CanvasRenderer } from 'echarts/renderers'
 import { getActivity, type ActivityDetail } from '../api'
 import { activityPaceSpeed, chartSeries, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis, recordExtrema } from '../activityDetail'
+import { createWorkoutIntervals, formatWorkoutDuration, formatWorkoutTarget, sortWorkoutIntervals, workoutLegend as getWorkoutLegend, workoutPhaseAreas, workoutTooltipLabel, type WorkoutDirection, type WorkoutSort } from '../workoutIntervals'
 import MetricCard from '../components/MetricCard.vue'
 import TrainingSummaryExport from '../components/TrainingSummaryExport.vue'
 
@@ -136,6 +163,8 @@ const groundContactTimeElement = ref<HTMLElement | null>(null)
 const groundContactBalanceElement = ref<HTMLElement | null>(null)
 const temperatureElement = ref<HTMLElement | null>(null)
 const powerElement = ref<HTMLElement | null>(null)
+const intervalSort = ref<WorkoutSort>('execution')
+const intervalDirection = ref<WorkoutDirection>('asc')
 let map: ReturnType<typeof L.map> | null = null
 let chartInstances: ECharts[] = []
 let chartResizeObserver: ResizeObserver | null = null
@@ -147,30 +176,17 @@ const routeVisible = computed(() => routeCoords.value.length >= 2)
 const routePointsForMap = computed(() => routeVisible.value ? routeCoords.value : [])
 const charts = computed(() => chartSeries(detail.value?.records ?? []))
 const laps = computed(() => lapRows(detail.value?.laps ?? [], detail.value?.records ?? []))
-const intervalRows = computed(() => {
-  const steps = detail.value?.workoutSteps ?? []
-  return steps.flatMap((step) => {
-    const linkedLaps = (detail.value?.laps ?? []).filter((lap) => lap.workoutStepIndex === step.stepIndex)
-    const rows = linkedLaps.length ? linkedLaps : [null]
-    return rows.map((lap) => ({
-      ...step,
-      name: step.name ?? `Schritt ${step.stepIndex + 1}`,
-      lap,
-      lapNumber: lap?.lapNumber ?? null,
-      repetitionNumber: lap?.repetitionNumber ?? null,
-      plannedDurationSeconds: step.plannedDurationSeconds,
-      plannedDistanceMeters: step.plannedDistanceMeters,
-    }))
-  })
+const workoutData = computed(() => createWorkoutIntervals(detail.value?.workoutSteps ?? [], detail.value?.laps ?? []))
+const intervalRows = computed(() => workoutData.value.intervals)
+const sortedIntervalRows = computed(() => sortWorkoutIntervals(intervalRows.value, intervalSort.value, intervalDirection.value))
+const unmatchedStepCount = computed(() => workoutData.value.unmatchedStepCount)
+const workoutLegend = computed(() => getWorkoutLegend(intervalRows.value))
+const intervalAreas = computed(() => workoutPhaseAreas(intervalRows.value, charts.value.coordinate === 'distance' ? 'distance' : 'time'))
+const intervalAt = (x: number) => intervalRows.value.find((interval) => {
+  const start = charts.value.coordinate === 'distance' ? interval.startDistanceMeters : interval.startElapsedSeconds
+  const end = charts.value.coordinate === 'distance' ? interval.endDistanceMeters : interval.endElapsedSeconds
+  return start !== null && end !== null && x >= start && x <= end
 })
-const intervalAreas = computed(() => intervalRows.value.flatMap((row) => {
-  const lap = row.lap
-  const start = charts.value.coordinate === 'distance' ? lap?.startDistanceMeters : lap?.startElapsedSeconds
-  const end = charts.value.coordinate === 'distance' ? lap?.endDistanceMeters : lap?.endElapsedSeconds
-  return start !== null && start !== undefined && end !== null && end !== undefined && end > start
-    ? [{ start, end, label: row.name }]
-    : []
-}))
 const paceSpeed = computed(() => detail.value ? activityPaceSpeed(detail.value) : { averageSpeedMetersPerSecond: null, movingSpeedMetersPerSecond: null, maximumSpeedMetersPerSecond: null, averagePaceSecondsPerKm: null, movingPaceSecondsPerKm: null, bestPaceSecondsPerKm: null })
 const recordValues = computed(() => recordExtrema(detail.value?.records ?? []))
 const paceForRun = computed(() => {
@@ -251,14 +267,16 @@ function makeChart(element: HTMLElement, name: string, data: [number, number | n
     animation: false,
     title: { text: name, left: 12, top: 8, textStyle: { fontSize: 15 } },
     grid: { left: 58, right: 20, top: 42, bottom: 32 },
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, formatter: (items: Array<{ data: [number, number | null] }>) => {
-      const [x, y] = items[0].data
-       return `${charts.value.coordinate === 'distance' ? `${(x / 1000).toFixed(2)} km` : elapsedClock(x)}<br>${y === null ? '–' : unit === 'min/km' ? formatPace(y) : `${y} ${unit}`}`
-     } },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, formatter: (items: Array<{ data: [number, number | null] }>) => {
+       const [x, y] = items[0].data
+       const interval = intervalAt(x)
+       const phase = interval ? workoutTooltipLabel(interval) : null
+       return `${charts.value.coordinate === 'distance' ? `${(x / 1000).toFixed(2)} km` : elapsedClock(x)}${phase ? `<br>${phase}` : ''}<br>${y === null ? '–' : unit === 'min/km' ? formatPace(y) : `${y} ${unit}`}`
+      } },
      xAxis: { type: 'value', name: charts.value.axisName, axisLabel: { formatter: (value: number) => charts.value.coordinate === 'distance' ? (value / 1000).toFixed(1) : elapsedClock(value) } },
      yAxis: { type: 'value', name: unit, inverse, scale: true, axisLabel: { formatter: (value: number) => unit === 'min/km' ? paceAxis(value) : value } },
      dataZoom: [{ type: 'inside', xAxisIndex: 0 }, { type: 'slider', xAxisIndex: 0, height: 16, bottom: 4 }],
-     series: [{ type: 'line', name, data, sampling: 'lttb', showSymbol: false, connectNulls: false, smooth: false, lineStyle: { width: 2 }, markArea: { silent: true, itemStyle: { color: 'rgba(59, 130, 246, 0.10)' }, data: intervalAreas.value.map(({ start, end, label }) => [{ name: label, xAxis: start }, { xAxis: end }]) } }],
+      series: [{ type: 'line', name, data, sampling: 'lttb', showSymbol: false, connectNulls: false, smooth: false, lineStyle: { width: 2 }, markArea: { silent: true, itemStyle: { opacity: 1 }, data: intervalAreas.value.map(({ start, end, color }) => [{ xAxis: start, itemStyle: { color } }, { xAxis: end }]) } }],
   })
   return chart
 }
@@ -290,7 +308,14 @@ onUnmounted(() => { requestId++; disposeVisuals() })
 .detail-panel h2 { margin: 0 0 1rem; color: var(--color-ink); font-size: 1.125rem; }
 .map { width: 100%; min-height: 24rem; border-radius: var(--radius-control); }
 .charts { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+.phase-legend { display: flex; flex-wrap: wrap; gap: .5rem 1rem; list-style: none; margin: 0 0 1rem; padding: 0; }
+.phase-legend li { display: inline-flex; align-items: center; gap: .4rem; color: var(--color-muted); font-size: .875rem; }
+.phase-legend span { width: .9rem; height: .9rem; border: 1px solid var(--color-border); border-radius: 2px; }
 .chart { width: 100%; min-width: 0; height: 17rem; }
+.sort-controls { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1rem; }
+.sort-controls label { display: grid; gap: .25rem; color: var(--color-muted); font-size: .875rem; }
+.sort-controls select { min-height: 2.75rem; max-width: 100%; padding: .5rem; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); }
+.muted { color: var(--color-muted); }
 .table-wrap { max-width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: .75rem; text-align: left; border-bottom: 1px solid var(--color-border); white-space: nowrap; }

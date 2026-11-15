@@ -16,6 +16,7 @@ import com.garmin.fit.SessionMesg;
 import com.garmin.fit.SessionMesgListener;
 import com.garmin.fit.WorkoutStepMesg;
 import com.garmin.fit.WorkoutStepMesgListener;
+import com.garmin.fit.WktStepTarget;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
@@ -161,13 +162,16 @@ public class GarminFitFixtureAdapter {
 
     public record DecodedWorkoutStep(int stepIndex, String name, String durationType,
                                      Double plannedDurationSeconds, Double plannedDistanceMeters,
-                                     Integer repeatFromStepIndex, Integer repeatCount, String intensity) {
+                                     Integer repeatFromStepIndex, Integer repeatCount, String intensity,
+                                     String targetType, Integer targetZone, Double targetLow,
+                                     Double targetHigh, String targetUnit) {
     }
 
     public record DecodedPause(Double startElapsedSeconds, Double endElapsedSeconds) {
     }
 
     private record TimerEvent(Instant timestamp, EventType type) { }
+    private record WorkoutTarget(String type, Integer zone, Double low, Double high, String unit) { }
 
     private static final class Listener implements ActivityMesgListener, RecordMesgListener, LapMesgListener,
             SessionMesgListener, WorkoutStepMesgListener, EventMesgListener {
@@ -201,8 +205,42 @@ public class GarminFitFixtureAdapter {
                     && mesg.getDurationStep() != null ? mesg.getDurationStep().intValue() : null;
             Integer repeatCount = repeatFrom != null && mesg.getRepeatSteps() != null
                     ? mesg.getRepeatSteps().intValue() : null;
+            WorkoutTarget target = workoutTarget(mesg);
             workoutSteps.add(new DecodedWorkoutStep(mesg.getMessageIndex(), mesg.getWktStepName(), durationType,
-                    duration, distance, repeatFrom, repeatCount, stringValue(mesg.getIntensity())));
+                    duration, distance, repeatFrom, repeatCount, stringValue(mesg.getIntensity()),
+                    target.type(), target.zone(), target.low(), target.high(), target.unit()));
+        }
+
+        private static WorkoutTarget workoutTarget(WorkoutStepMesg mesg) {
+            WktStepTarget type = mesg.getTargetType();
+            if (type == null || type == WktStepTarget.OPEN || type == WktStepTarget.INVALID) {
+                return new WorkoutTarget(null, null, null, null, null);
+            }
+            return switch (type) {
+                case HEART_RATE, HEART_RATE_LAP -> offsetTarget("heart_rate", mesg.getTargetHrZone(),
+                        mesg.getCustomTargetHeartRateLow(), mesg.getCustomTargetHeartRateHigh(), 100, "bpm", "% HRmax");
+                case POWER, POWER_3S, POWER_10S, POWER_30S, POWER_LAP -> offsetTarget("power", mesg.getTargetPowerZone(),
+                        mesg.getCustomTargetPowerLow(), mesg.getCustomTargetPowerHigh(), 1000, "W", "% FTP");
+                case SPEED, SPEED_LAP -> new WorkoutTarget("speed", integer(mesg.getTargetSpeedZone()),
+                        number(mesg.getCustomTargetSpeedLow()), number(mesg.getCustomTargetSpeedHigh()), "m/s");
+                case CADENCE -> new WorkoutTarget("cadence", integer(mesg.getTargetCadenceZone()),
+                        number(mesg.getCustomTargetCadenceLow()), number(mesg.getCustomTargetCadenceHigh()), "steps/min");
+                default -> new WorkoutTarget(stringValue(type), null, null, null, null);
+            };
+        }
+
+        private static WorkoutTarget offsetTarget(String type, Long zone, Long low, Long high,
+                                                  long offset, String absoluteUnit, String relativeUnit) {
+            boolean lowAbsolute = low != null && low > offset;
+            boolean highAbsolute = high != null && high > offset;
+            if (low != null && high != null && lowAbsolute != highAbsolute) {
+                return new WorkoutTarget(type, integer(zone), null, null, null);
+            }
+            boolean absolute = low != null ? lowAbsolute : highAbsolute;
+            double correction = absolute ? offset : 0d;
+            return new WorkoutTarget(type, integer(zone),
+                    low == null ? null : low - correction, high == null ? null : high - correction,
+                    absolute ? absoluteUnit : relativeUnit);
         }
 
         @Override
