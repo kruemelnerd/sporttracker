@@ -25,5 +25,10 @@ public class GarminSyncTriggers {
     @Scheduled(fixedDelayString = "${running-dashboard.garmin-personal-api.sync-interval:PT30M}")
     public void onSchedule() { trigger(); }
 
-    private void trigger() { if (sync.configured()) sync.startAsync(executor); }
+    private void trigger() {
+        if (sync.configured()) {
+            sync.markAutomaticSyncTrigger();
+            sync.startAsync(executor);
+        }
+    }
 }

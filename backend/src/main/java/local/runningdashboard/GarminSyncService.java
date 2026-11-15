@@ -25,6 +25,7 @@ public class GarminSyncService {
     private final Clock clock;
     private final ZoneId dateZone;
     private final AtomicBoolean running = new AtomicBoolean();
+    private volatile Instant lastAutomaticSyncTriggerAt;
 
     @org.springframework.beans.factory.annotation.Autowired
     public GarminSyncService(@org.springframework.beans.factory.annotation.Qualifier("garminActivityImportSource") ActivityImportSource source,
@@ -205,7 +206,12 @@ public class GarminSyncService {
                 properties.configured(), state != null && state.lastSuccessfulAuthenticationAt() != null,
                 running.get(), automaticSyncSuppressed,
                 state == null ? null : state.lastAttemptAt(), state == null ? null : state.lastSuccessfulSyncAt(),
-                state == null ? null : state.retryAfterUntil(), result);
+                state == null ? null : state.retryAfterUntil(), result, lastAutomaticSyncTriggerAt,
+                properties.syncInterval().toSeconds());
+    }
+
+    public void markAutomaticSyncTrigger() {
+        if (properties.configured()) lastAutomaticSyncTriggerAt = clock.instant();
     }
 
     private static SyncResult result(boolean started, int checked, int imported, int present, int skipped, int failed,
@@ -221,5 +227,6 @@ public class GarminSyncService {
                              String error, Instant attemptedAt, Instant completedAt) { }
     public record Status(boolean enabled, boolean apiKeyPresent, boolean configured, boolean connected, boolean running,
                          boolean automaticSyncSuppressed, Instant lastAttemptAt, Instant lastSuccessfulSyncAt,
-                         Instant retryAfterUntil, SyncResult lastResult) { }
+                         Instant retryAfterUntil, SyncResult lastResult, Instant lastAutomaticSyncTriggerAt,
+                         long syncIntervalSeconds) { }
 }

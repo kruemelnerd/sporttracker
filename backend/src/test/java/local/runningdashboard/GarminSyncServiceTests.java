@@ -159,6 +159,25 @@ class GarminSyncServiceTests {
     }
 
     @Test
+    void rateLimitIsPersistedAndPreventsAnotherUpstreamAttempt() {
+        var source = new FakeSource(List.of(), fit) {
+            @Override public List<RemoteActivity> listActivities(LocalDate oldest, LocalDate newest) {
+                oldestCalls++;
+                throw new GarminClientException("RATE_LIMITED", Duration.ofMinutes(12));
+            }
+        };
+        var service = service(source);
+
+        var first = service.synchronize();
+        var second = service.synchronize();
+
+        assertEquals("RATE_LIMITED", first.error());
+        assertEquals("RATE_LIMITED", second.error());
+        assertEquals(1, source.oldestCalls);
+        assertEquals(Instant.parse("2026-10-19T10:12:00Z"), states.find().orElseThrow().retryAfterUntil());
+    }
+
+    @Test
     void refusesToLinkAnExternalIdThatBecameMappedToAnotherActivity() {
         Long otherId = jdbc.queryForObject("INSERT INTO activity (sport, start_time) VALUES ('cycling', ?) RETURNING id", Long.class,
                 java.sql.Timestamp.from(Instant.parse("2026-10-18T08:00:00Z")));

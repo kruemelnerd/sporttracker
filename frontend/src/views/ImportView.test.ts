@@ -31,7 +31,7 @@ const status = (overrides = {}) => ({
 const garminStatus = (overrides = {}) => ({
   enabled: true, apiKeyPresent: true, configured: true, connected: true, running: false,
   automaticSyncSuppressed: false, lastAttemptAt: null, lastSuccessfulSyncAt: null,
-  retryAfterUntil: null, lastResult: null, ...overrides,
+  retryAfterUntil: null, lastResult: null, lastAutomaticSyncTriggerAt: null, syncIntervalSeconds: 1800, ...overrides,
 })
 
 describe('ImportView', () => {
@@ -47,13 +47,13 @@ describe('ImportView', () => {
     resumeDataSync.mockReset()
   })
 
-  it('shows an unconfigured Garmin source without revealing credentials', async () => {
+  it('shows a disabled Garmin source without revealing credentials', async () => {
     getGarminStatus.mockResolvedValue(garminStatus({ enabled: false, apiKeyPresent: false, configured: false, connected: false }))
     const wrapper = mount(ImportView)
     await settle()
 
-    expect(wrapper.get('[data-testid="garmin-status"]').text()).toContain('Nicht konfiguriert')
-    expect(wrapper.text()).toContain('GARMIN_PERSONAL_API_KEY')
+    expect(wrapper.get('[data-testid="garmin-status"]').text()).toContain('Garmin deaktiviert')
+    expect(wrapper.text()).not.toContain('GARMIN_PERSONAL_API_KEY')
     expect(wrapper.get('[data-testid="garmin-sync"]').attributes('disabled')).toBeDefined()
     expect(wrapper.text()).not.toContain('private-test-key')
   })
@@ -115,6 +115,72 @@ describe('ImportView', () => {
     await settle()
     expect(wrapper.get('[data-testid="management-error"]').text()).toContain('Vorschau veraltet.')
     expect(confirmDataDeletion).not.toHaveBeenCalled()
+  })
+
+  it('prioritizes disabled Garmin over a stale confirmed connection', async () => {
+    getGarminStatus.mockResolvedValue(garminStatus({ enabled: false, apiKeyPresent: false, configured: false, connected: true }))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="garmin-status"]').text()).toContain('Garmin deaktiviert')
+    expect(wrapper.get('[data-testid="garmin-sync"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('reports an enabled but keyless Garmin configuration as missing its key', async () => {
+    getGarminStatus.mockResolvedValue(garminStatus({ enabled: true, apiKeyPresent: false, configured: false, connected: false }))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="garmin-status"]').text()).toContain('API-Key fehlt')
+    expect(wrapper.get('[data-testid="garmin-status"]').classes()).toContain('error')
+    expect(wrapper.get('[data-testid="garmin-sync"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('warns when automatic sync is overdue but does not let old connection state mask it', async () => {
+    vi.useFakeTimers()
+    getGarminStatus.mockResolvedValue(garminStatus({
+      lastAutomaticSyncTriggerAt: '2026-10-19T10:00:00Z',
+      connected: true,
+    }))
+    vi.setSystemTime(new Date('2026-10-19T11:01:00Z'))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="garmin-status"]').text()).toContain('Synchronisierung überfällig')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('does not hide an overdue Garmin scheduler because Intervals automation is suppressed', async () => {
+    vi.useFakeTimers()
+    getGarminStatus.mockResolvedValue(garminStatus({
+      automaticSyncSuppressed: true,
+      lastAutomaticSyncTriggerAt: '2026-10-19T10:00:00Z',
+    }))
+    vi.setSystemTime(new Date('2026-10-19T11:01:00Z'))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="garmin-status"]').text()).toContain('Synchronisierung überfällig')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('prioritizes an active Garmin rate-limit pause over the previous failed result', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-19T11:00:00Z'))
+    getGarminStatus.mockResolvedValue(garminStatus({
+      retryAfterUntil: '2026-10-19T11:12:00Z',
+      lastResult: { started: true, checked: 0, imported: 0, alreadyPresent: 0, skipped: 0, failed: 1,
+        error: 'RATE_LIMITED', attemptedAt: '2026-10-19T10:30:00Z', completedAt: '2026-10-19T10:30:00Z' },
+    }))
+    const wrapper = mount(ImportView)
+    await settle()
+
+    expect(wrapper.get('[data-testid="garmin-status"]').text()).toContain('Synchronisierung pausiert')
+    expect(wrapper.get('[data-testid="garmin-sync"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+    vi.useRealTimers()
   })
 
   it('distinguishes configured Garmin credentials from a verified connection', async () => {

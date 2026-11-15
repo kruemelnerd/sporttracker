@@ -143,16 +143,53 @@ Garmin ist die primäre, optionale FIT-Datenquelle. FIT bleibt Quelle für Dista
 4. Manuellen Lauf über **Import → Garmin Connect → Jetzt synchronisieren** starten oder `POST /api/imports/garmin/sync` aufrufen. `GET /api/imports/garmin/status` zeigt Konfiguration, bestätigte Verbindung, Laufstatus, letzte Ergebnisse und Rate-Limit-Sperre; weder API-Key noch Token werden zurückgegeben.
 5. Automatische Synchronisierung läuft nach aktiviertem Start und danach standardmäßig alle 30 Minuten. Ein fehlgeschlagenes/unvollständiges Fenster wird nicht als erfolgreich fortgeschrieben und bei späterem Lauf erneut geprüft.
 
-### Garmin im Docker-Compose-Betrieb
+### Garmin in Produktion aktivieren
 
-Das Basis-Compose bleibt unverändert und Garmin deaktiviert. Für eine spätere, manuelle Aktivierung (nicht Teil dieses Changes und kein Deployment) die Key-Datei außerhalb des Repositorys bereitstellen, mit den für den App-Container passenden restriktiven Rechten, und zusätzlich `compose.production.garmin.yaml` einbinden:
+Die Basisinstallation bleibt ohne Garmin unverändert. Für eine bewusste dauerhafte Aktivierung auf `/opt/sporttracker` den Key außerhalb des Repositorys als Secret-Datei ablegen. Der Inhalt wird interaktiv eingegeben und erscheint dadurch weder in Shell-History noch in Prozessargumenten:
 
 ```bash
-export GARMIN_PERSONAL_API_KEY_FILE=/secure/path/garmin-personal-api-key
-docker compose -f compose.production.yaml -f compose.production.garmin.yaml config --quiet
+sudo install -d -o root -g root -m 700 /etc/sporttracker
+sudo install -o 10001 -g 10001 -m 400 /dev/null /etc/sporttracker/garmin-personal-api-key
+sudoedit /etc/sporttracker/garmin-personal-api-key
+sudo chmod 400 /etc/sporttracker/garmin-personal-api-key
+sudo chown 10001:10001 /etc/sporttracker/garmin-personal-api-key
+sudoedit /etc/sporttracker/production.env
 ```
 
-Der Override reicht den Key ausschließlich als Docker-Compose-Secret mit dem Namen `GARMIN_PERSONAL_API_KEY` ein; Spring Boot liest die Datei über den vorhandenen `configtree:/run/secrets/`-Import. Er aktiviert Intervals.icu nicht. Compose-Konfiguration prüfen, aber Garmin erst nach bewusster späterer Betriebsfreigabe starten. Der reguläre Updateprozess wird dadurch nicht geändert.
+In `/etc/sporttracker/production.env` (Datei weiterhin nur für den Deployment-Benutzer zugänglich, Modus `0600`) ergänzen:
+
+```dotenv
+GARMIN_PRODUCTION_ENABLED=true
+GARMIN_PERSONAL_API_KEY_FILE=/etc/sporttracker/garmin-personal-api-key
+```
+
+`GARMIN_PRODUCTION_ENABLED=true` ist der dauerhaft gespeicherte Betriebsmodus. Nur ein vorhandener Key aktiviert nichts. Der reguläre Update-Wrapper prüft den Modus und Key vor dem Backup/Deployment; bei aktivierter, fehlender oder unsicher lesbarer Datei bricht er vor Änderungen ab. Release-Verifikation, Backup, Healthcheck und Digest-Pinning bleiben unverändert. Der Garmin-Override wird automatisch beim Status-Check, Backup, Update und Deployment hinzugefügt; ein vergessenes optionales CLI-Argument kann Garmin nicht abschalten.
+
+Konfiguration gefahrlos validieren und den aktuellen Dienststand prüfen:
+
+```bash
+cd /opt/sporttracker
+docker compose --env-file /etc/sporttracker/production.env -p sporttracker-prod \
+  -f compose.production.yaml -f compose.production.garmin.yaml config --quiet
+docker compose --env-file /etc/sporttracker/production.env -p sporttracker-prod \
+  -f compose.production.yaml -f compose.production.garmin.yaml ps
+```
+
+Updates erfolgen weiterhin ausschließlich über den Pflicht-Backup- und Release-Verifikationsprozess unter [Manuelles Produktionsupdate](#manuelles-produktionsupdate-mit-pflicht-backup). Für einen reinen Neustart ohne Image- oder Konfigurationsänderung:
+
+```bash
+docker compose --env-file /etc/sporttracker/production.env -p sporttracker-prod \
+  -f compose.production.yaml -f compose.production.garmin.yaml restart app
+```
+
+Zum bewussten Deaktivieren `GARMIN_PRODUCTION_ENABLED=false` in der privaten Datei setzen und den Container mit dem Basis-Compose neu erstellen (kein Volume löschen):
+
+```bash
+docker compose --env-file /etc/sporttracker/production.env -p sporttracker-prod \
+  -f compose.production.yaml up -d --wait app
+```
+
+Der Key bleibt außerhalb von Backups/Metadaten. Für die Wiederherstellung auf isolierte neue Ressourcen müssen Betriebsmodus und Secret separat bereitgestellt und – falls Garmin auch dort aktiv sein soll – der Override zur verwendeten Compose-Datei hinzugefügt werden. Automatische Syncs starten nach dem App-Start und danach standardmäßig alle 30 Minuten. In **Import → Garmin Connect** sind letzter Versuch, letzter Erfolg, letztes Ergebnis und Scheduler-Zustand getrennt sichtbar; `GET /api/imports/garmin/status` enthält keine Zugangsdaten. Bei Fehlern `ps`/Health und lokale App-Logs prüfen, Logs vor Weitergabe bereinigen und `retryAfterUntil` beachten. Mehr als 60 Minuten ohne automatischen Trigger wird nur bei aktivierter, vollständiger und nicht rate-limitierten Integration gewarnt.
 
 ### Fehlerbehandlung und Einschränkungen
 

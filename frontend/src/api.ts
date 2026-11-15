@@ -162,6 +162,8 @@ export type GarminStatus = {
   lastSuccessfulSyncAt: string | null
   retryAfterUntil: string | null
   lastResult: GarminSyncResult | null
+  lastAutomaticSyncTriggerAt: string | null
+  syncIntervalSeconds: number
 }
 
 export type DataManagementAction = 'DELETE_GARMIN' | 'DELETE_INTERVALS_ICU' | 'DELETE_ACTIVITIES' | 'RESET_APPLICATION_DATA'

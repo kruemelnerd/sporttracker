@@ -53,6 +53,40 @@ class GarminSyncControllerTests {
     }
 
     @Test
+    void statusSeparatesAutomaticTriggersFromManualSyncAttempts() throws Exception {
+        var props = props(true, "synthetic-private-key");
+        var service = service(props, new EmptySource());
+        service.markAutomaticSyncTrigger();
+        var mvc = MockMvcBuilders.standaloneSetup(new GarminSyncController(service, props,
+                new IntervalsIcuProperties(false, "", "https://intervals.icu", Duration.ofMinutes(15), 90),
+                new SyncTaskExecutor())).build();
+
+        mvc.perform(get("/api/imports/garmin/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.lastAutomaticSyncTriggerAt").isNotEmpty())
+                .andExpect(jsonPath("$.syncIntervalSeconds").value(1800));
+    }
+
+    @Test
+    void applicationReadyAndScheduledTriggersStartOnlyConfiguredGarminSyncs() {
+        jdbc.update("DELETE FROM garmin_sync_state");
+        var disabled = props(false, "synthetic-private-key");
+        var disabledService = service(disabled, new EmptySource());
+        var disabledTriggers = new GarminSyncTriggers(disabledService, new SyncTaskExecutor());
+        disabledTriggers.onApplicationReady();
+        disabledTriggers.onSchedule();
+        org.junit.jupiter.api.Assertions.assertNull(disabledService.status(false).lastAutomaticSyncTriggerAt());
+
+        var enabled = props(true, "synthetic-private-key");
+        var enabledService = service(enabled, new EmptySource());
+        var enabledTriggers = new GarminSyncTriggers(enabledService, new SyncTaskExecutor());
+        enabledTriggers.onApplicationReady();
+        enabledTriggers.onSchedule();
+        org.junit.jupiter.api.Assertions.assertNotNull(enabledService.status(false).lastAutomaticSyncTriggerAt());
+        jdbc.update("DELETE FROM garmin_sync_state");
+    }
+
+    @Test
     void statusReportsWhenIntervalsAutomationIsSuppressedByConfiguredGarmin() throws Exception {
         var props = props(true, "synthetic-private-key");
         var intervals = new IntervalsIcuProperties(true, "synthetic-intervals-key", "https://intervals.icu", Duration.ofMinutes(15), 90);
