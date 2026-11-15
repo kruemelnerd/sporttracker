@@ -61,6 +61,7 @@ endpoint=$(docker context inspect default --format '{{.Endpoints.docker.Host}}')
 current_digest=$(sed -n 's/^SPORTTRACKER_IMAGE_DIGEST=//p' "$env_file")
 [[ $current_digest =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'invalid currently configured image digest'
 
+"${compose[@]}" config --quiet || fail 'production Compose configuration is invalid'
 app_id=$("${compose[@]}" ps -q app) || fail 'cannot inspect running application'
 [[ -n $app_id ]] || fail 'no running production application; use the documented first-install procedure'
 [[ $(docker --context default inspect -f '{{.State.Status}}' "$app_id") == running ]] || fail 'production application is not running'
@@ -69,8 +70,14 @@ running_image=$(docker --context default inspect -f '{{.Config.Image}}' "$app_id
 [[ $running_image == "ghcr.io/kruemelnerd/sporttracker@$current_digest" ]] || fail 'running image differs from saved image digest; investigate before updating'
 
 if [[ $current_digest == "${image##*@}" ]]; then
-  echo "Already running the requested verified image; no update or backup required."
-  exit 0
+  config_hash_output=$("${compose[@]}" config --hash app) || fail 'cannot identify desired application configuration'
+  [[ $config_hash_output =~ ^app[[:space:]]+([0-9a-f]{64})$ ]] || fail 'Compose returned an invalid application configuration hash'
+  desired_config_hash=${BASH_REMATCH[1]}
+  running_config_hash=$(docker --context default inspect -f '{{index .Config.Labels "com.docker.compose.config-hash"}}' "$app_id") || fail 'cannot identify running application configuration'
+  if [[ $desired_config_hash == "$running_config_hash" ]]; then
+    echo "Already running the requested verified image and configuration; no update or backup required."
+    exit 0
+  fi
 fi
 
 echo 'Creating and verifying a pre-update backup (brief application downtime)...'

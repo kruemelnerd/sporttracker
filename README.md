@@ -165,6 +165,18 @@ GARMIN_PERSONAL_API_KEY_FILE=/etc/sporttracker/garmin-personal-api-key
 
 `GARMIN_PRODUCTION_ENABLED=true` ist der dauerhaft gespeicherte Betriebsmodus. Nur ein vorhandener Key aktiviert nichts. Der reguläre Update-Wrapper prüft den Modus und Key vor dem Backup/Deployment; bei aktivierter, fehlender oder unsicher lesbarer Datei bricht er vor Änderungen ab. Release-Verifikation, Backup, Healthcheck und Digest-Pinning bleiben unverändert. Der Garmin-Override wird automatisch beim Status-Check, Backup, Update und Deployment hinzugefügt; ein vergessenes optionales CLI-Argument kann Garmin nicht abschalten.
 
+Die erstmalige Aktivierung wird auch dann über den regulären, verifizierten Prozess angewendet, wenn das aktuelle Image beibehalten werden soll. Der Wrapper erkennt Änderungen an der Compose-Servicekonfiguration, erstellt das Pflicht-Backup und verifiziert/deployed denselben gespeicherten Digest erneut:
+
+```bash
+cd /opt/sporttracker
+current_digest=$(sed -n 's/^SPORTTRACKER_IMAGE_DIGEST=//p' /etc/sporttracker/production.env)
+bash scripts/update-production.sh \
+  --env-file /etc/sporttracker/production.env \
+  --project sporttracker-prod \
+  --backup-dir /var/backups/sporttracker \
+  "ghcr.io/kruemelnerd/sporttracker@$current_digest"
+```
+
 Konfiguration gefahrlos validieren und den aktuellen Dienststand prüfen:
 
 ```bash

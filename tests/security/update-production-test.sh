@@ -18,6 +18,8 @@ printf '%s\n' "$*" >> "$CALL_LOG"
 case "$*" in
   'context inspect default --format {{.Endpoints.docker.Host}}') echo 'unix:///var/run/docker.sock' ;;
   *' ps -q app') echo 'fixture-app' ;;
+  *' config --hash app'*) [[ " $* " == *'compose.production.garmin.yaml'* ]] && printf 'app %064d\n' 2 || printf 'app %064d\n' 1 ;;
+  *' inspect -f {{index .Config.Labels "com.docker.compose.config-hash"}} fixture-app') printf '%064d\n' 1 ;;
   *' inspect -f {{.State.Status}} fixture-app') echo 'running' ;;
   *' inspect -f {{.State.Health.Status}} fixture-app') echo 'healthy' ;;
   *' inspect -f {{.Config.Image}} fixture-app') printf 'ghcr.io/kruemelnerd/sporttracker@sha256:%064d\n' 0 ;;
@@ -91,6 +93,9 @@ chmod 400 "$tmp/garmin-key"
 if GARMIN_TEST_KEY=/wrong run "$image" >/dev/null 2>&1; then echo 'Accepted Garmin key owned by the wrong UID' >&2; exit 1; fi
 assert_no_events
 export GARMIN_TEST_KEY="$tmp/garmin-key"
+run "$current_image" >/dev/null
+[[ $(sed -n '1s/ .*$//p' "$EVENT_LOG") == backup && $(sed -n '2s/ .*$//p' "$EVENT_LOG") == deploy ]] || { echo 'Same-digest Garmin activation did not run the verified backup/deploy flow' >&2; exit 1; }
+: > "$EVENT_LOG"
 run "$image" >/dev/null
 [[ $(sed -n '1s/ .*$//p' "$EVENT_LOG") == backup && $(sed -n '2s/ .*$//p' "$EVENT_LOG") == deploy ]] || { echo 'Missing or out-of-order backup/deployment' >&2; exit 1; }
 grep -q -- '-f .*compose.production.garmin.yaml' "$CALL_LOG" || { echo 'Update status check omitted Garmin override' >&2; exit 1; }
