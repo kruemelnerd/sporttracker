@@ -206,6 +206,49 @@ test('long activity shows measured running dynamics, linked intervals and pauses
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
 })
 
+test('workout table selection and chart clicks stay linked and reset together', async ({ page }) => {
+  await page.route('**/api/activities/24', (route) => route.fulfill({ json: {
+    ...detail(24),
+    records: [0, 1000, 2000].map((distanceMeters) => ({
+      elapsedSeconds: distanceMeters / 3,
+      distanceMeters,
+      latitude: null,
+      longitude: null,
+      altitudeMeters: null,
+      speedMetersPerSecond: 3,
+      heartRate: 145,
+      cadence: 80,
+      stepLengthMeters: null,
+      verticalOscillationCentimeters: null,
+      verticalRatioPercent: null,
+      groundContactTimeMilliseconds: null,
+      groundContactBalancePercent: null,
+      temperatureCelsius: null,
+      powerWatts: 240,
+    })),
+    laps: [
+      { lapNumber: 1, durationSeconds: 300, distanceMeters: 1000, averageSpeedMetersPerSecond: 3, averageHeartRate: 145, averageCadence: 80, ascentMeters: null, descentMeters: null, workoutStepIndex: 0, repetitionNumber: 1, startElapsedSeconds: 0, endElapsedSeconds: 300, startDistanceMeters: 0, endDistanceMeters: 1000 },
+      { lapNumber: 2, durationSeconds: 300, distanceMeters: 1000, averageSpeedMetersPerSecond: 3, averageHeartRate: 145, averageCadence: 80, ascentMeters: null, descentMeters: null, workoutStepIndex: 1, repetitionNumber: 1, startElapsedSeconds: 300, endElapsedSeconds: 600, startDistanceMeters: 1000, endDistanceMeters: 2000 },
+    ],
+    workoutSteps: [
+      { stepIndex: 0, name: 'Schwelle', durationType: 'distance', plannedDurationSeconds: null, plannedDistanceMeters: 1000, repeatFromStepIndex: null, repeatCount: null, intensity: 'active', targetType: 'speed', targetZone: null, targetLow: 3.077, targetHigh: 3.175, targetUnit: 'm/s' },
+      { stepIndex: 1, name: 'Erholung', durationType: 'distance', plannedDurationSeconds: null, plannedDistanceMeters: 1000, repeatFromStepIndex: null, repeatCount: null, intensity: 'recovery' },
+    ],
+  } }))
+  await page.goto('/activities/24')
+  const intervalTable = page.getByTestId('workout-intervals')
+  const thresholdRow = intervalTable.getByRole('row').filter({ hasText: 'Schwelle' })
+
+  await expect(thresholdRow).toHaveAttribute('aria-selected', 'false')
+  await thresholdRow.click()
+  await expect(thresholdRow).toHaveAttribute('aria-selected', 'true')
+  await page.getByRole('button', { name: 'Gesamtes Training anzeigen' }).click()
+  await expect(thresholdRow).toHaveAttribute('aria-selected', 'false')
+  const paceCanvas = page.getByTestId('pace-chart').locator('canvas')
+  await paceCanvas.click({ position: { x: 300, y: 100 } })
+  await expect(thresholdRow).toHaveAttribute('aria-selected', 'true')
+})
+
 test('training summary is usable and copies only selected metrics on mobile', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.route('**/api/activities/23', (route) => route.fulfill({ json: detail(23, true) }))

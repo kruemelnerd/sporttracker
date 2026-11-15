@@ -48,10 +48,11 @@
 
       <section class="detail-panel" aria-labelledby="charts-heading">
         <h2 id="charts-heading">Trainingsverlauf</h2>
-        <ul v-if="workoutLegend.length" class="phase-legend" aria-label="Trainingsphasen">
+        <ul v-if="workoutLegend.length || hasChartTargets" class="phase-legend" aria-label="Trainingsphasen">
           <li v-for="phase in workoutLegend" :key="phase.label">
             <span :style="{ backgroundColor: phase.color }" aria-hidden="true"></span>{{ phase.label }}
           </li>
+          <li v-if="hasChartTargets" class="target-legend"><span aria-hidden="true"></span>Trainingsziel</li>
         </ul>
         <p v-if="!charts.pace.length">Für diesen Lauf sind keine Messpunkte vorhanden.</p>
         <div v-else class="charts">
@@ -92,7 +93,11 @@
         <div class="table-wrap" role="region" aria-label="Workout-Intervalltabelle; horizontal scrollbar auf kleinen Bildschirmen" tabindex="0">
           <table>
             <thead><tr><th>Nr.</th><th>Trainingsphase</th><th>Wiederholung</th><th>Distanz</th><th>Dauer</th><th>Ø Pace</th><th>Ø HF</th><th>Trainingsziel</th></tr></thead>
-            <tbody><tr v-for="interval in sortedIntervalRows" :key="`${interval.executionOrder}-${interval.lapNumber}`">
+            <tbody><tr v-for="interval in sortedIntervalRows" :key="interval.id"
+              :data-interval-id="interval.id" :class="{ selected: selectedIntervalId === interval.id }"
+              :aria-selected="selectedIntervalId === interval.id" tabindex="0"
+              @click="selectInterval(interval.id)" @keydown.enter.prevent="selectInterval(interval.id)"
+              @keydown.space.prevent="selectInterval(interval.id)">
               <td>{{ interval.executionOrder + 1 }}</td>
               <td>{{ interval.phaseName }}</td>
               <td>{{ interval.repetitionNumber === null ? '–' : `${interval.repetitionNumber}${interval.repeatBlockCount === null ? '' : ` von ${interval.repeatBlockCount}`}` }}</td>
@@ -104,6 +109,9 @@
             </tr></tbody>
           </table>
         </div>
+        <button type="button" class="reset-zoom" aria-label="Gesamtes Training anzeigen" @click="resetWorkoutSelection">
+          Gesamtes Training anzeigen
+        </button>
       </section>
 
       <section v-if="detail.pauses?.length" class="detail-panel" aria-labelledby="pauses-heading" data-testid="timer-pauses">
@@ -137,15 +145,15 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { connect, init, use as echartsUse, type ECharts } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
-import { DataZoomComponent, GridComponent, MarkAreaComponent, TitleComponent, TooltipComponent } from 'echarts/components'
+import { DataZoomComponent, GridComponent, MarkAreaComponent, MarkLineComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { getActivity, type ActivityDetail } from '../api'
 import { activityPaceSpeed, chartSeries, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis, recordExtrema } from '../activityDetail'
-import { createWorkoutIntervals, formatWorkoutDuration, formatWorkoutTarget, sortWorkoutIntervals, workoutLegend as getWorkoutLegend, workoutPhaseAreas, workoutTooltipLabel, type WorkoutDirection, type WorkoutSort } from '../workoutIntervals'
+import { createWorkoutIntervals, formatWorkoutDuration, formatWorkoutTarget, normalizeWorkoutTarget, sortWorkoutIntervals, workoutLegend as getWorkoutLegend, workoutPhaseAreas, workoutTargetMarks, workoutTooltipLabel, workoutZoomExtent, type WorkoutDirection, type WorkoutMetric, type WorkoutSort } from '../workoutIntervals'
 import MetricCard from '../components/MetricCard.vue'
 import TrainingSummaryExport from '../components/TrainingSummaryExport.vue'
 
-echartsUse([LineChart, DataZoomComponent, GridComponent, MarkAreaComponent, TitleComponent, TooltipComponent, CanvasRenderer])
+echartsUse([LineChart, DataZoomComponent, GridComponent, MarkAreaComponent, MarkLineComponent, TitleComponent, TooltipComponent, CanvasRenderer])
 
 const currentRoute = useRoute()
 const detail = ref<ActivityDetail | null>(null)
@@ -165,8 +173,10 @@ const temperatureElement = ref<HTMLElement | null>(null)
 const powerElement = ref<HTMLElement | null>(null)
 const intervalSort = ref<WorkoutSort>('execution')
 const intervalDirection = ref<WorkoutDirection>('asc')
+const selectedIntervalId = ref<string | null>(null)
 let map: ReturnType<typeof L.map> | null = null
 let chartInstances: ECharts[] = []
+const chartMetrics = new WeakMap<ECharts, WorkoutMetric | null>()
 let chartResizeObserver: ResizeObserver | null = null
 let requestId = 0
 
@@ -182,7 +192,22 @@ const sortedIntervalRows = computed(() => sortWorkoutIntervals(intervalRows.valu
 const unmatchedStepCount = computed(() => workoutData.value.unmatchedStepCount)
 const workoutLegend = computed(() => getWorkoutLegend(intervalRows.value))
 const intervalAreas = computed(() => workoutPhaseAreas(intervalRows.value, charts.value.coordinate === 'distance' ? 'distance' : 'time'))
-const intervalAt = (x: number) => intervalRows.value.find((interval) => {
+const chartAxis = computed(() => charts.value.coordinate === 'distance' ? 'distance' as const : 'time' as const)
+const chartDomain = computed(() => {
+  const values = (detail.value?.records ?? []).map((record) =>
+    chartAxis.value === 'distance' ? record.distanceMeters : record.elapsedSeconds)
+    .filter((value): value is number => value !== null && Number.isFinite(value))
+  return values.length ? values.reduce((domain, value) => ({
+    start: Math.min(domain.start, value),
+    end: Math.max(domain.end, value),
+  }), { start: values[0], end: values[0] }) : null
+})
+const selectedInterval = computed(() => intervalRows.value.find(({ id }) => id === selectedIntervalId.value) ?? null)
+const hasChartTargets = computed(() => intervalRows.value.some((interval) => {
+  const target = normalizeWorkoutTarget(interval.target)
+  return target?.metric !== null && target?.metric !== undefined && (target.low !== null || target.high !== null)
+}))
+const intervalAt = (x: number) => [...intervalRows.value].reverse().find((interval) => {
   const start = charts.value.coordinate === 'distance' ? interval.startDistanceMeters : interval.startElapsedSeconds
   const end = charts.value.coordinate === 'distance' ? interval.endDistanceMeters : interval.endElapsedSeconds
   return start !== null && end !== null && x >= start && x <= end
@@ -198,6 +223,65 @@ const descent = computed(() => {
 })
 const garminMetricsPresent = computed(() => Object.values(detail.value?.garminTrainingMetrics ?? {}).some((value) => value !== null))
 const hasValues = (series: [number, number | null][]) => series.some(([, value]) => value !== null)
+
+function selectInterval(id: string, scrollIntoView = false) {
+  const interval = intervalRows.value.find(({ id: intervalId }) => intervalId === id)
+  if (!interval) return
+  selectedIntervalId.value = id
+  const extent = chartDomain.value ? workoutZoomExtent(interval, chartAxis.value, chartDomain.value) : null
+  if (extent) chartInstances.forEach((chart) => chart.dispatchAction({ type: 'dataZoom', startValue: extent.start, endValue: extent.end }))
+  updateChartHighlights()
+  if (scrollIntoView) void nextTick(() => {
+    const row = document.querySelector<HTMLElement>(`[data-interval-id="${id}"]`)
+    if (!row) return
+    const bounds = row.getBoundingClientRect()
+    if (bounds.top < 0 || bounds.bottom > window.innerHeight) row.scrollIntoView({ block: 'nearest' })
+  })
+}
+
+function resetWorkoutSelection() {
+  selectedIntervalId.value = null
+  if (chartDomain.value) chartInstances.forEach((chart) => chart.dispatchAction({
+    type: 'dataZoom', startValue: chartDomain.value!.start, endValue: chartDomain.value!.end,
+  }))
+  updateChartHighlights()
+}
+
+function targetMarkAreas(metric: WorkoutMetric | null) {
+  const areas: Array<unknown> = intervalAreas.value.map(({ start, end, color }) =>
+    [{ xAxis: start, itemStyle: { color } }, { xAxis: end }])
+  if (metric) workoutTargetMarks(intervalRows.value, chartAxis.value, metric)
+    .filter(({ low, high }) => low !== high)
+    .forEach(({ start, end, low, high }) => areas.push([
+      { xAxis: start, yAxis: low, itemStyle: { color: 'rgba(107, 114, 128, 0.10)' } },
+      { xAxis: end, yAxis: high },
+    ]))
+  const selected = selectedInterval.value
+  if (selected) {
+    const start = chartAxis.value === 'distance' ? selected.startDistanceMeters : selected.startElapsedSeconds
+    const end = chartAxis.value === 'distance' ? selected.endDistanceMeters : selected.endElapsedSeconds
+    if (start !== null && end !== null) areas.push([
+      { xAxis: start, yAxis: 'min', itemStyle: { color: 'rgba(37, 99, 235, 0.10)' } },
+      { xAxis: end, yAxis: 'max' },
+    ])
+  }
+  return areas
+}
+
+function targetMarkLines(metric: WorkoutMetric | null) {
+  if (!metric) return []
+  return workoutTargetMarks(intervalRows.value, chartAxis.value, metric).flatMap(({ start, end, low, high }) =>
+    [...new Set([low, high])].map((value) => [
+      { coord: [start, value] },
+      { coord: [end, value] },
+    ]))
+}
+
+function updateChartHighlights() {
+  chartInstances.forEach((chart) => {
+    chart.setOption({ series: [{ markArea: { data: targetMarkAreas(chartMetrics.get(chart) ?? null) } }] })
+  })
+}
 
 const distance = (meters: number | null) => meters === null ? '–' : `${(meters / 1000).toFixed(2)} km`
 const duration = (seconds: number | null) => {
@@ -218,6 +302,7 @@ const elapsedClock = (seconds: number) => {
 async function loadActivity(id: string) {
   const currentRequest = ++requestId
   disposeVisuals()
+  selectedIntervalId.value = null
   loading.value = true
   error.value = null
   try {
@@ -235,17 +320,17 @@ async function loadActivity(id: string) {
       L.marker(routePointsForMap.value.at(-1)!).addTo(map).bindTooltip('Ziel')
     }
     if (charts.value.pace.length) {
-      if (hasValues(charts.value.pace) && paceElement.value) chartInstances.push(makeChart(paceElement.value, 'Pace', charts.value.pace, 'min/km', true))
-      if (hasValues(charts.value.heartRate) && heartElement.value) chartInstances.push(makeChart(heartElement.value, 'Herzfrequenz', charts.value.heartRate, 'bpm'))
+      if (hasValues(charts.value.pace) && paceElement.value) chartInstances.push(makeChart(paceElement.value, 'Pace', charts.value.pace, 'min/km', 'pace', true))
+      if (hasValues(charts.value.heartRate) && heartElement.value) chartInstances.push(makeChart(heartElement.value, 'Herzfrequenz', charts.value.heartRate, 'bpm', 'heartRate'))
       if (hasValues(charts.value.elevation) && elevationElement.value) chartInstances.push(makeChart(elevationElement.value, 'Höhenprofil', charts.value.elevation, 'm'))
-      if (hasValues(charts.value.cadence) && cadenceElement.value) chartInstances.push(makeChart(cadenceElement.value, 'Kadenz', charts.value.cadence.map(([x, value]) => [x, value === null ? null : value * 2]), 'steps/min'))
+      if (hasValues(charts.value.cadence) && cadenceElement.value) chartInstances.push(makeChart(cadenceElement.value, 'Kadenz', charts.value.cadence.map(([x, value]) => [x, value === null ? null : value * 2]), 'steps/min', 'cadence'))
       if (hasValues(charts.value.stepLength) && stepLengthElement.value) chartInstances.push(makeChart(stepLengthElement.value, 'Schrittlänge', charts.value.stepLength, 'm'))
       if (hasValues(charts.value.verticalOscillation) && verticalOscillationElement.value) chartInstances.push(makeChart(verticalOscillationElement.value, 'Vertikale Bewegung', charts.value.verticalOscillation, 'cm'))
       if (hasValues(charts.value.verticalRatio) && verticalRatioElement.value) chartInstances.push(makeChart(verticalRatioElement.value, 'Vertikales Verhältnis', charts.value.verticalRatio, '%'))
       if (hasValues(charts.value.groundContactTime) && groundContactTimeElement.value) chartInstances.push(makeChart(groundContactTimeElement.value, 'Bodenkontaktzeit', charts.value.groundContactTime, 'ms'))
       if (hasValues(charts.value.groundContactBalance) && groundContactBalanceElement.value) chartInstances.push(makeChart(groundContactBalanceElement.value, 'Bodenkontaktbalance', charts.value.groundContactBalance, '%'))
       if (hasValues(charts.value.temperature) && temperatureElement.value) chartInstances.push(makeChart(temperatureElement.value, 'Temperatur', charts.value.temperature, '°C'))
-      if (hasValues(charts.value.power) && powerElement.value) chartInstances.push(makeChart(powerElement.value, 'Laufleistung', charts.value.power, 'W'))
+      if (hasValues(charts.value.power) && powerElement.value) chartInstances.push(makeChart(powerElement.value, 'Laufleistung', charts.value.power, 'W', 'power'))
       if (chartInstances.length > 1) connect(chartInstances)
       chartResizeObserver = new ResizeObserver((entries) => {
         const changedElements = new Set(entries.map(({ target }) => target))
@@ -261,22 +346,56 @@ async function loadActivity(id: string) {
   }
 }
 
-function makeChart(element: HTMLElement, name: string, data: [number, number | null][], unit: string, inverse = false) {
+function makeChart(
+  element: HTMLElement,
+  name: string,
+  data: [number, number | null][],
+  unit: string,
+  metric: WorkoutMetric | null = null,
+  inverse = false,
+) {
   const chart = init(element)
+  chartMetrics.set(chart, metric)
   chart.setOption({
     animation: false,
     title: { text: name, left: 12, top: 8, textStyle: { fontSize: 15 } },
     grid: { left: 58, right: 20, top: 42, bottom: 32 },
       tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, formatter: (items: Array<{ data: [number, number | null] }>) => {
-       const [x, y] = items[0].data
-       const interval = intervalAt(x)
-       const phase = interval ? workoutTooltipLabel(interval) : null
-       return `${charts.value.coordinate === 'distance' ? `${(x / 1000).toFixed(2)} km` : elapsedClock(x)}${phase ? `<br>${phase}` : ''}<br>${y === null ? '–' : unit === 'min/km' ? formatPace(y) : `${y} ${unit}`}`
-      } },
+        const [x, y] = items[0].data
+        const interval = intervalAt(x)
+        const phase = interval ? workoutTooltipLabel(interval) : null
+        const target = interval ? normalizeWorkoutTarget(interval.target) : null
+        let targetLabel = target?.label ?? null
+        if (target?.metric === 'pace' && target.low !== null && target.high !== null) {
+          const low = formatPace(target.low).replace(' min/km', '')
+          const high = formatPace(target.high).replace(' min/km', '')
+          targetLabel = low === high ? `${low} min/km` : `${low}–${high} min/km`
+        } else if (targetLabel?.includes(': ')) {
+          targetLabel = targetLabel.slice(targetLabel.indexOf(': ') + 2)
+        }
+        const actual = y === null ? '–' : unit === 'min/km' ? formatPace(y) : `${y} ${unit}`
+        return `${charts.value.coordinate === 'distance' ? `${(x / 1000).toFixed(2)} km` : elapsedClock(x)}${phase ? `<br>${phase}` : ''}<br>Ist: ${actual}${target && metric !== null && target.metric === metric ? `<br>Ziel: ${targetLabel}` : ''}`
+       } },
      xAxis: { type: 'value', name: charts.value.axisName, axisLabel: { formatter: (value: number) => charts.value.coordinate === 'distance' ? (value / 1000).toFixed(1) : elapsedClock(value) } },
      yAxis: { type: 'value', name: unit, inverse, scale: true, axisLabel: { formatter: (value: number) => unit === 'min/km' ? paceAxis(value) : value } },
      dataZoom: [{ type: 'inside', xAxisIndex: 0 }, { type: 'slider', xAxisIndex: 0, height: 16, bottom: 4 }],
-      series: [{ type: 'line', name, data, sampling: 'lttb', showSymbol: false, connectNulls: false, smooth: false, lineStyle: { width: 2 }, markArea: { silent: true, itemStyle: { opacity: 1 }, data: intervalAreas.value.map(({ start, end, color }) => [{ xAxis: start, itemStyle: { color } }, { xAxis: end }]) } }],
+      series: [{
+        type: 'line', name, data, sampling: 'lttb', showSymbol: false, connectNulls: false, smooth: false, lineStyle: { width: 2 },
+        markArea: { silent: true, itemStyle: { opacity: 1 }, data: targetMarkAreas(metric) },
+        markLine: {
+          silent: true, symbol: 'none',
+          lineStyle: { color: '#6B7280', type: 'dashed', width: 1 },
+          data: targetMarkLines(metric),
+        },
+      }],
+   })
+  chart.getZr().on('click', (event) => {
+    if (!chart.containPixel({ gridIndex: 0 }, [event.offsetX, event.offsetY])) return
+    const [x] = chart.convertFromPixel({ gridIndex: 0 }, [event.offsetX, event.offsetY]) as number[]
+    if (Number.isFinite(x)) {
+      const interval = intervalAt(x)
+      if (interval) selectInterval(interval.id, true)
+    }
   })
   return chart
 }
@@ -311,10 +430,15 @@ onUnmounted(() => { requestId++; disposeVisuals() })
 .phase-legend { display: flex; flex-wrap: wrap; gap: .5rem 1rem; list-style: none; margin: 0 0 1rem; padding: 0; }
 .phase-legend li { display: inline-flex; align-items: center; gap: .4rem; color: var(--color-muted); font-size: .875rem; }
 .phase-legend span { width: .9rem; height: .9rem; border: 1px solid var(--color-border); border-radius: 2px; }
+.phase-legend .target-legend span { background: rgba(107, 114, 128, .1); border: 1px dashed #6b7280; }
 .chart { width: 100%; min-width: 0; height: 17rem; }
 .sort-controls { display: flex; flex-wrap: wrap; gap: .75rem; margin-bottom: 1rem; }
 .sort-controls label { display: grid; gap: .25rem; color: var(--color-muted); font-size: .875rem; }
 .sort-controls select { min-height: 2.75rem; max-width: 100%; padding: .5rem; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); }
+.reset-zoom { min-height: 2.75rem; margin-top: 1rem; padding: .5rem .75rem; border: 1px solid var(--color-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-ink); cursor: pointer; }
+tbody tr { cursor: pointer; }
+tbody tr:hover, tbody tr:focus-visible { background: var(--color-surface-muted, #f3f4f6); outline: 2px solid var(--color-primary, #2563eb); outline-offset: -2px; }
+tbody tr.selected { background: rgba(37, 99, 235, .1); }
 .muted { color: var(--color-muted); }
 .table-wrap { max-width: 100%; overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; }
