@@ -3,6 +3,10 @@ package local.runningdashboard;
 import com.garmin.fit.ActivityMesg;
 import com.garmin.fit.ActivityMesgListener;
 import com.garmin.fit.Decode;
+import com.garmin.fit.Event;
+import com.garmin.fit.EventMesg;
+import com.garmin.fit.EventMesgListener;
+import com.garmin.fit.EventType;
 import com.garmin.fit.LapMesg;
 import com.garmin.fit.LapMesgListener;
 import com.garmin.fit.MesgBroadcaster;
@@ -10,12 +14,15 @@ import com.garmin.fit.RecordMesg;
 import com.garmin.fit.RecordMesgListener;
 import com.garmin.fit.SessionMesg;
 import com.garmin.fit.SessionMesgListener;
+import com.garmin.fit.WorkoutStepMesg;
+import com.garmin.fit.WorkoutStepMesgListener;
 import java.io.IOException;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
@@ -41,6 +48,8 @@ public class GarminFitFixtureAdapter {
         broadcaster.addListener((RecordMesgListener) listener);
         broadcaster.addListener((LapMesgListener) listener);
         broadcaster.addListener((SessionMesgListener) listener);
+        broadcaster.addListener((WorkoutStepMesgListener) listener);
+        broadcaster.addListener((EventMesgListener) listener);
         if (!decode.read(input, broadcaster, broadcaster)) {
             throw new IOException("FIT decoder rejected input");
         }
@@ -59,42 +68,148 @@ public class GarminFitFixtureAdapter {
         return value == null ? null : value.doubleValue();
     }
 
+    static DecodedRecord decodeRecord(RecordMesg mesg) {
+        return new DecodedRecord(instant(mesg.getTimestamp()), null, number(mesg.getDistance()),
+                degrees(mesg.getPositionLat(), true), degrees(mesg.getPositionLong(), false),
+                preferEnhanced(mesg.getAltitude(), mesg.getEnhancedAltitude()),
+                preferEnhanced(mesg.getSpeed(), mesg.getEnhancedSpeed()), integer(mesg.getHeartRate()),
+                integer(mesg.getCadence()), null,
+                bounded(first(scaled(mesg.getStepLength(), 1000d), developerValue(mesg, RecordMesg.StepLengthFieldNum)), 0d, Double.MAX_VALUE),
+                bounded(first(scaled(mesg.getVerticalOscillation(), 10d), developerValue(mesg, RecordMesg.VerticalOscillationFieldNum)), 0d, Double.MAX_VALUE),
+                bounded(first(number(mesg.getVerticalRatio()), developerValue(mesg, RecordMesg.VerticalRatioFieldNum)), 0d, 100d),
+                bounded(first(number(mesg.getStanceTime()), developerValue(mesg, RecordMesg.StanceTimeFieldNum)), 0d, Double.MAX_VALUE),
+                bounded(first(number(mesg.getStanceTimeBalance()), developerValue(mesg, RecordMesg.StanceTimeBalanceFieldNum)), 0d, 100d),
+                bounded(first(number(mesg.getTemperature()), developerValue(mesg, RecordMesg.TemperatureFieldNum)), -100d, 100d),
+                bounded(first(number(mesg.getPower()), developerValue(mesg, RecordMesg.PowerFieldNum)), 0d, Double.MAX_VALUE));
+    }
+
+    private static Double developerValue(RecordMesg mesg, int nativeField) {
+        String name = switch (nativeField) {
+            case RecordMesg.StepLengthFieldNum -> "step_length";
+            case RecordMesg.VerticalOscillationFieldNum -> "vertical_oscillation";
+            case RecordMesg.VerticalRatioFieldNum -> "vertical_ratio";
+            case RecordMesg.StanceTimeFieldNum -> "stance_time";
+            case RecordMesg.StanceTimeBalanceFieldNum -> "stance_time_balance";
+            case RecordMesg.TemperatureFieldNum -> "temperature";
+            case RecordMesg.PowerFieldNum -> "power";
+            default -> null;
+        };
+        if (name == null) return null;
+        for (var field : mesg.getDeveloperFields()) {
+            String declaredName = field.getName();
+            String declaredUnits = field.getUnits();
+            String fieldName = declaredName == null ? "" : declaredName.toLowerCase(Locale.ROOT).replace(' ', '_');
+            boolean matches = field.getNativeOverride() == nativeField || fieldName.equals(name)
+                    || (name.equals("stance_time") && fieldName.equals("ground_contact_time"))
+                    || (name.equals("stance_time_balance") && fieldName.equals("ground_contact_balance"))
+                    || (name.equals("power") && fieldName.equals("running_power"));
+            if (!matches || declaredUnits == null || !field.isValid() || !(field.getValue() instanceof Number value)) continue;
+            String units = declaredUnits.trim().toLowerCase(Locale.ROOT);
+            double factor = switch (name) {
+                case "step_length" -> units.equals("mm") ? 0.001d : units.equals("m") ? 1d : Double.NaN;
+                case "vertical_oscillation" -> units.equals("mm") ? 0.1d : units.equals("cm") ? 1d : Double.NaN;
+                case "vertical_ratio", "stance_time_balance" -> units.equals("%") ? 1d : Double.NaN;
+                case "stance_time" -> units.equals("ms") ? 1d : units.equals("s") ? 1000d : Double.NaN;
+                case "temperature" -> units.equals("c") || units.equals("°c") || units.equals("deg c") ? 1d : Double.NaN;
+                case "power" -> units.equals("w") || units.equals("watts") ? 1d : Double.NaN;
+                default -> Double.NaN;
+            };
+            Double number = number(value);
+            if (number != null && Double.isFinite(factor)) return number * factor;
+        }
+        return null;
+    }
+
+    private static Double first(Double preferred, Double fallback) { return preferred != null ? preferred : fallback; }
+    private static Double bounded(Double value, double minimum, double maximum) {
+        return value != null && value >= minimum && value <= maximum ? value : null;
+    }
+    private static Instant instant(com.garmin.fit.DateTime value) { return value == null ? null : value.getDate().toInstant(); }
+    private static Double number(Number value) {
+        if (value == null) return null;
+        double result = value.doubleValue();
+        return Double.isFinite(result) ? result : null;
+    }
+    private static Integer integer(Number value) { return value == null ? null : value.intValue(); }
+    private static Double scaled(Number value, double divisor) {
+        Double result = number(value);
+        return result == null ? null : result / divisor;
+    }
+
     public record DecodedActivity(String sport, String subSport, Instant startTime, Double elapsedSeconds,
                                   Double movingSeconds, Double distanceMeters, Double averageSpeedMetersPerSecond,
                                   Integer averageHeartRate, Integer maximumHeartRate, Integer averageCadence, Double ascentMeters,
-                                  Integer calories, List<DecodedRecord> records, List<DecodedLap> laps) {
+                                  Integer calories, List<DecodedRecord> records, List<DecodedLap> laps,
+                                  List<DecodedWorkoutStep> workoutSteps, List<DecodedPause> pauses) {
     }
 
     public record DecodedRecord(Instant timestamp, Double elapsedSeconds, Double distanceMeters, Double latitude,
                                 Double longitude, Double altitudeMeters, Double speedMetersPerSecond,
-                                Integer heartRate, Integer cadence, Double descentMeters) {
+                                Integer heartRate, Integer cadence, Double descentMeters, Double stepLengthMeters,
+                                Double verticalOscillationCentimeters, Double verticalRatioPercent,
+                                Double groundContactTimeMilliseconds, Double groundContactBalancePercent,
+                                Double temperatureCelsius, Double powerWatts) {
     }
 
     public record DecodedLap(int lapNumber, Double durationSeconds, Double distanceMeters,
-                             Double averageSpeedMetersPerSecond, Integer averageHeartRate,
-                             Integer averageCadence, Double ascentMeters, Double descentMeters) {
+                              Double averageSpeedMetersPerSecond, Integer averageHeartRate,
+                              Integer averageCadence, Double ascentMeters, Double descentMeters,
+                              Integer workoutStepIndex, Integer repetitionNumber,
+                              Double startElapsedSeconds, Double endElapsedSeconds,
+                              Double startDistanceMeters, Double endDistanceMeters) {
     }
 
-    private static final class Listener implements ActivityMesgListener, RecordMesgListener, LapMesgListener, SessionMesgListener {
+    public record DecodedWorkoutStep(int stepIndex, String name, String durationType,
+                                     Double plannedDurationSeconds, Double plannedDistanceMeters,
+                                     Integer repeatFromStepIndex, Integer repeatCount, String intensity) {
+    }
+
+    public record DecodedPause(Double startElapsedSeconds, Double endElapsedSeconds) {
+    }
+
+    private record TimerEvent(Instant timestamp, EventType type) { }
+
+    private static final class Listener implements ActivityMesgListener, RecordMesgListener, LapMesgListener,
+            SessionMesgListener, WorkoutStepMesgListener, EventMesgListener {
         private final List<DecodedActivity> sessions = new ArrayList<>();
         private final List<DecodedRecord> records = new ArrayList<>();
-        private final List<DecodedLap> laps = new ArrayList<>();
+        private final List<LapMesg> sourceLaps = new ArrayList<>();
+        private final List<DecodedWorkoutStep> workoutSteps = new ArrayList<>();
+        private final List<TimerEvent> timerEvents = new ArrayList<>();
 
         @Override public void onMesg(ActivityMesg mesg) { }
 
         @Override
         public void onMesg(RecordMesg mesg) {
-            Instant timestamp = instant(mesg.getTimestamp());
-            records.add(new DecodedRecord(timestamp, null, doubleValue(mesg.getDistance()), degrees(mesg.getPositionLat(), true),
-                    degrees(mesg.getPositionLong(), false), preferEnhanced(mesg.getAltitude(), mesg.getEnhancedAltitude()), preferEnhanced(mesg.getSpeed(), mesg.getEnhancedSpeed()),
-                    integerValue(mesg.getHeartRate()), integerValue(mesg.getCadence()), null));
+            records.add(decodeRecord(mesg));
         }
 
         @Override
         public void onMesg(LapMesg mesg) {
-            laps.add(new DecodedLap(laps.size() + 1, doubleValue(mesg.getTotalElapsedTime()), doubleValue(mesg.getTotalDistance()),
-                    doubleValue(mesg.getAvgSpeed()), integerValue(mesg.getAvgHeartRate()), integerValue(mesg.getAvgCadence()),
-                    doubleValue(mesg.getTotalAscent()), doubleValue(mesg.getTotalDescent())));
+            sourceLaps.add(mesg);
+        }
+
+        @Override
+        public void onMesg(WorkoutStepMesg mesg) {
+            if (mesg.getMessageIndex() == null) return;
+            String durationType = stringValue(mesg.getDurationType());
+            Double duration = mesg.getDurationType() == com.garmin.fit.WktStepDuration.TIME
+                    ? doubleValue(mesg.getDurationTime()) : null;
+            Double distance = mesg.getDurationType() == com.garmin.fit.WktStepDuration.DISTANCE
+                    ? doubleValue(mesg.getDurationDistance()) : null;
+            Integer repeatFrom = mesg.getDurationType() == com.garmin.fit.WktStepDuration.REPEAT_UNTIL_STEPS_CMPLT
+                    && mesg.getDurationStep() != null ? mesg.getDurationStep().intValue() : null;
+            Integer repeatCount = repeatFrom != null && mesg.getRepeatSteps() != null
+                    ? mesg.getRepeatSteps().intValue() : null;
+            workoutSteps.add(new DecodedWorkoutStep(mesg.getMessageIndex(), mesg.getWktStepName(), durationType,
+                    duration, distance, repeatFrom, repeatCount, stringValue(mesg.getIntensity())));
+        }
+
+        @Override
+        public void onMesg(EventMesg mesg) {
+            if (mesg.getEvent() == Event.TIMER && mesg.getTimestamp() != null && mesg.getEventType() != null) {
+                timerEvents.add(new TimerEvent(instant(mesg.getTimestamp()), mesg.getEventType()));
+            }
         }
 
         @Override
@@ -102,7 +217,8 @@ public class GarminFitFixtureAdapter {
             sessions.add(new DecodedActivity(stringValue(mesg.getSport()), stringValue(mesg.getSubSport()), instant(mesg.getStartTime()),
                     doubleValue(mesg.getTotalElapsedTime()), doubleValue(mesg.getTotalTimerTime()), doubleValue(mesg.getTotalDistance()),
                     doubleValue(mesg.getAvgSpeed()), integerValue(mesg.getAvgHeartRate()), integerValue(mesg.getMaxHeartRate()), integerValue(mesg.getAvgRunningCadence() != null ? mesg.getAvgRunningCadence() : mesg.getAvgCadence()),
-                    doubleValue(mesg.getTotalAscent()), integerValue(mesg.getTotalCalories()), List.of(), List.of()));
+                    doubleValue(mesg.getTotalAscent()), integerValue(mesg.getTotalCalories()), List.of(), List.of(),
+                    List.of(), List.of()));
         }
 
         private DecodedActivity decoded() throws IOException {
@@ -112,19 +228,73 @@ public class GarminFitFixtureAdapter {
             List<DecodedRecord> ordered = new ArrayList<>(records.size());
             for (DecodedRecord record : records) {
                 Double elapsed = record.timestamp() == null ? null : (double) (record.timestamp().toEpochMilli() - session.startTime().toEpochMilli()) / 1000d;
-                ordered.add(new DecodedRecord(record.timestamp(), elapsed, record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence(), null));
+                ordered.add(new DecodedRecord(record.timestamp(), elapsed, record.distanceMeters(), record.latitude(),
+                        record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(),
+                        record.cadence(), null, record.stepLengthMeters(), record.verticalOscillationCentimeters(),
+                        record.verticalRatioPercent(), record.groundContactTimeMilliseconds(),
+                        record.groundContactBalancePercent(), record.temperatureCelsius(), record.powerWatts()));
             }
             ordered.sort(Comparator.comparing(DecodedRecord::timestamp, Comparator.nullsLast(Comparator.naturalOrder())));
+            workoutSteps.sort(Comparator.comparing(DecodedWorkoutStep::stepIndex));
+            List<DecodedLap> laps = decodeLaps(session.startTime());
             Double previousAltitude = null;
             for (int index = 0; index < ordered.size(); index++) {
                 DecodedRecord record = ordered.get(index);
                 Double descent = record.altitudeMeters() == null || previousAltitude == null ? null : Math.max(0, previousAltitude - record.altitudeMeters());
                 previousAltitude = record.altitudeMeters();
-                ordered.set(index, new DecodedRecord(record.timestamp(), record.elapsedSeconds(), record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence(), descent));
+                ordered.set(index, new DecodedRecord(record.timestamp(), record.elapsedSeconds(), record.distanceMeters(),
+                        record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(),
+                        record.heartRate(), record.cadence(), descent, record.stepLengthMeters(),
+                        record.verticalOscillationCentimeters(), record.verticalRatioPercent(),
+                        record.groundContactTimeMilliseconds(), record.groundContactBalancePercent(),
+                        record.temperatureCelsius(), record.powerWatts()));
             }
             return new DecodedActivity(session.sport(), session.subSport(), session.startTime(), session.elapsedSeconds(), session.movingSeconds(),
                     session.distanceMeters(), session.averageSpeedMetersPerSecond(), session.averageHeartRate(), session.maximumHeartRate(), session.averageCadence(), session.ascentMeters(),
-                    session.calories(), List.copyOf(ordered), List.copyOf(laps));
+                    session.calories(), List.copyOf(ordered), List.copyOf(laps), List.copyOf(workoutSteps),
+                    pauses(session.startTime()));
+        }
+
+        private List<DecodedLap> decodeLaps(Instant activityStart) {
+            List<DecodedLap> result = new ArrayList<>(sourceLaps.size());
+            Double accumulatedDistance = 0d;
+            boolean completeDistance = true;
+            for (LapMesg mesg : sourceLaps) {
+                Double lapDistance = number(mesg.getTotalDistance());
+                Double startDistance = completeDistance ? accumulatedDistance : null;
+                if (lapDistance == null || lapDistance < 0) completeDistance = false;
+                else if (completeDistance) accumulatedDistance += lapDistance;
+                result.add(new DecodedLap(result.size() + 1, number(mesg.getTotalElapsedTime()), lapDistance,
+                        number(mesg.getAvgSpeed()), integer(mesg.getAvgHeartRate()), integer(mesg.getAvgCadence()),
+                        number(mesg.getTotalAscent()), number(mesg.getTotalDescent()), mesg.getWktStepIndex(),
+                        mesg.getRepetitionNum(), secondsBetween(activityStart, instant(mesg.getStartTime())),
+                        secondsBetween(activityStart, instant(mesg.getTimestamp())), startDistance,
+                        completeDistance ? accumulatedDistance : null));
+            }
+            return result;
+        }
+
+        private List<DecodedPause> pauses(Instant activityStart) {
+            List<DecodedPause> pauses = new ArrayList<>();
+            Instant stoppedAt = null;
+            for (TimerEvent event : timerEvents.stream()
+                    .sorted(Comparator.comparing(TimerEvent::timestamp)).toList()) {
+                if (event.type() == EventType.STOP || event.type() == EventType.STOP_ALL
+                        || event.type() == EventType.STOP_DISABLE || event.type() == EventType.STOP_DISABLE_ALL) {
+                    if (stoppedAt == null) stoppedAt = event.timestamp();
+                } else if (event.type() == EventType.START && stoppedAt != null) {
+                    if (event.timestamp().isAfter(stoppedAt)) {
+                        pauses.add(new DecodedPause(secondsBetween(activityStart, stoppedAt),
+                                secondsBetween(activityStart, event.timestamp())));
+                    }
+                    stoppedAt = null;
+                }
+            }
+            return List.copyOf(pauses);
+        }
+
+        private static Double secondsBetween(Instant start, Instant end) {
+            return start == null || end == null ? null : (end.toEpochMilli() - start.toEpochMilli()) / 1000d;
         }
 
         private static Instant instant(com.garmin.fit.DateTime value) { return value == null ? null : value.getDate().toInstant(); }

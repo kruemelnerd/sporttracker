@@ -160,6 +160,47 @@ test('activity detail retains map, charts and labelled laps across mobile and ta
   })).toBeLessThanOrEqual(1)
 })
 
+test('long activity shows measured running dynamics, linked intervals and pauses on mobile', async ({ page }) => {
+  const base = detail(23)
+  const records = Array.from({ length: 3000 }, (_, index) => ({
+    elapsedSeconds: index * 2,
+    distanceMeters: index * 3,
+    latitude: null,
+    longitude: null,
+    altitudeMeters: null,
+    speedMetersPerSecond: 3,
+    heartRate: 140 + index % 10,
+    cadence: 80,
+    stepLengthMeters: 1.1 + (index % 5) / 100,
+    verticalOscillationCentimeters: 8 + (index % 4) / 10,
+    verticalRatioPercent: 7.5,
+    groundContactTimeMilliseconds: 240 + index % 10,
+    groundContactBalancePercent: 50,
+    temperatureCelsius: 12,
+    powerWatts: 250 + index % 20,
+  }))
+  await page.route('**/api/activities/23', (route) => route.fulfill({ json: {
+    ...base,
+    records,
+    laps: [
+      { lapNumber: 1, durationSeconds: 300, distanceMeters: 450, averageSpeedMetersPerSecond: 3, averageHeartRate: 150, averageCadence: 80, ascentMeters: null, descentMeters: null, workoutStepIndex: 1, repetitionNumber: 1, startElapsedSeconds: 300, endElapsedSeconds: 600, startDistanceMeters: 450, endDistanceMeters: 900 },
+      { lapNumber: 2, durationSeconds: 300, distanceMeters: 900, averageSpeedMetersPerSecond: 3, averageHeartRate: 150, averageCadence: 80, ascentMeters: null, descentMeters: null, workoutStepIndex: null, repetitionNumber: null, startElapsedSeconds: 600, endElapsedSeconds: 900, startDistanceMeters: 900, endDistanceMeters: 1800 },
+    ],
+    workoutSteps: [{ stepIndex: 1, name: 'Schwelle', durationType: 'distance', plannedDurationSeconds: null, plannedDistanceMeters: 900, repeatFromStepIndex: null, repeatCount: null, intensity: 'active' }],
+    pauses: [{ startElapsedSeconds: 610, endElapsedSeconds: 625 }],
+  } }))
+  await page.setViewportSize({ width: 375, height: 812 })
+  await page.goto('/activities/23')
+
+  await expect(page.getByTestId('step-length-chart')).toBeVisible()
+  await expect(page.getByTestId('ground-contact-time-chart')).toBeVisible()
+  await expect(page.getByTestId('power-chart')).toBeVisible()
+  await expect(page.getByTestId('workout-intervals')).toContainText('Schwelle')
+  await expect(page.getByTestId('timer-pauses')).toContainText('00:10:10')
+  await expect(page.getByTestId('laps')).not.toContainText('Schwelle')
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375)
+})
+
 test('training summary is usable and copies only selected metrics on mobile', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.route('**/api/activities/23', (route) => route.fulfill({ json: detail(23, true) }))

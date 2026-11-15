@@ -60,11 +60,18 @@ export function displayCadence(value: number | null): string {
 }
 
 export function chartSeries(records: ActivityRecord[]) {
-  const ordered = records.filter((record) => record.distanceMeters !== null)
+  const distanceAxis = records.length > 0
+    && records.every((record, index) => record.distanceMeters !== null
+      && Number.isFinite(record.distanceMeters)
+      && (index === 0 || record.distanceMeters >= records[index - 1].distanceMeters!))
+  const coordinate = (record: ActivityRecord) => distanceAxis ? record.distanceMeters : record.elapsedSeconds
+  const ordered = records.filter((record) => coordinate(record) !== null && Number.isFinite(coordinate(record)))
   const stride = Math.max(1, Math.ceil(ordered.length / 1500))
   const indices = new Set<number>([0, ordered.length - 1])
   for (let index = 0; index < ordered.length; index += stride) indices.add(index)
-  const metrics = ['speedMetersPerSecond', 'heartRate', 'altitudeMeters', 'cadence'] as const
+  const metrics = ['speedMetersPerSecond', 'heartRate', 'altitudeMeters', 'cadence', 'stepLengthMeters',
+    'verticalOscillationCentimeters', 'verticalRatioPercent', 'groundContactTimeMilliseconds',
+    'groundContactBalancePercent', 'temperatureCelsius', 'powerWatts'] as const
   for (const metric of metrics) {
     for (let index = 0; index < ordered.length; index++) {
       if ((ordered[index][metric] === null) !== (ordered[index - 1]?.[metric] === null)) indices.add(index)
@@ -86,11 +93,22 @@ export function chartSeries(records: ActivityRecord[]) {
     return secondsPerKm !== null && Number.isFinite(secondsPerKm) && secondsPerKm <= MAX_CHART_PACE_SECONDS_PER_KM ? secondsPerKm : null
   })
   const reducedPace = [...indices].sort((a, b) => a - b).map((index) => pace[index])
+  const points = <K extends typeof metrics[number]>(metric: K) =>
+    reduced.map((record) => [coordinate(record)!, record[metric] ?? null] as [number, number | null])
   return {
-    pace: reduced.map((record, index) => [record.distanceMeters!, reducedPace[index]] as [number, number | null]),
-    heartRate: reduced.map((record) => [record.distanceMeters!, record.heartRate] as [number, number | null]),
-    elevation: reduced.map((record) => [record.distanceMeters!, record.altitudeMeters] as [number, number | null]),
-    cadence: reduced.map((record) => [record.distanceMeters!, record.cadence] as [number, number | null]),
+    coordinate: distanceAxis ? 'distance' as const : 'time' as const,
+    axisName: distanceAxis ? 'Distanz (km)' : 'Zeit',
+    pace: reduced.map((record, index) => [coordinate(record)!, reducedPace[index]] as [number, number | null]),
+    heartRate: points('heartRate'),
+    elevation: points('altitudeMeters'),
+    cadence: points('cadence'),
+    stepLength: points('stepLengthMeters'),
+    verticalOscillation: points('verticalOscillationCentimeters'),
+    verticalRatio: points('verticalRatioPercent'),
+    groundContactTime: points('groundContactTimeMilliseconds'),
+    groundContactBalance: points('groundContactBalancePercent'),
+    temperature: points('temperatureCelsius'),
+    power: points('powerWatts'),
   }
 }
 

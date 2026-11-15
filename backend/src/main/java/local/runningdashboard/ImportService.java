@@ -90,16 +90,25 @@ public class ImportService {
             staged = stage(fitInput);
             String hash = staged.hash();
             Long hashMatch = importedActivity(hash);
-            if (hashMatch != null) return ImportOutcome.duplicate(hashMatch);
             GarminFitFixtureAdapter.DecodedActivity decoded;
             try (InputStream input = Files.newInputStream(staged.path())) {
                 decoded = adapter.decode(input);
             }
             if (!"running".equals(decoded.sport())) return ImportOutcome.skipped();
+            if (hashMatch != null) {
+                transactions.execute(status -> mergeFitDetails(hashMatch, decoded));
+                return ImportOutcome.duplicate(hashMatch);
+            }
             List<Long> existing = existingActivities(decoded);
             if (existing.size() == 1) {
                 Long activityId = existing.getFirst();
-                jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes, source) VALUES (?, ?, ?, ?)", activityId, hash, staged.size(), source);
+                long stagedSize = staged.size();
+                transactions.execute(status -> {
+                    jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes, source) VALUES (?, ?, ?, ?)",
+                            activityId, hash, stagedSize, source);
+                    mergeFitDetails(activityId, decoded);
+                    return null;
+                });
                 return ImportOutcome.duplicate(activityId);
             }
             if (existing.size() > 1) return ImportOutcome.ambiguousDuplicate();
@@ -180,16 +189,113 @@ public class ImportService {
         Long activityId = jdbc.queryForObject("INSERT INTO activity (sport, sub_sport, start_time, elapsed_seconds, moving_seconds, distance_meters, average_speed_mps, average_heart_rate, maximum_heart_rate, average_cadence, ascent_meters, calories) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
                 Long.class, decoded.sport(), decoded.subSport(), Timestamp.from(decoded.startTime()), decoded.elapsedSeconds(), decoded.movingSeconds(), decoded.distanceMeters(), decoded.averageSpeedMetersPerSecond(), decoded.averageHeartRate(), decoded.maximumHeartRate(), decoded.averageCadence(), decoded.ascentMeters(), decoded.calories());
         jdbc.update("INSERT INTO import_file (activity_id, sha256, size_bytes, source) VALUES (?, ?, ?, ?)", activityId, hash, sizeBytes, source);
-        int index = 0;
-        for (GarminFitFixtureAdapter.DecodedRecord record : decoded.records()) {
-            jdbc.update("INSERT INTO activity_record (activity_id, record_index, record_time, elapsed_seconds, distance_meters, latitude, longitude, altitude_meters, speed_mps, heart_rate, cadence, descent_meters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    activityId, index++, record.timestamp() == null ? null : Timestamp.from(record.timestamp()), record.elapsedSeconds(), record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(), record.heartRate(), record.cadence(), record.descentMeters());
+        insertRecords(activityId, decoded.records());
+        for (GarminFitFixtureAdapter.DecodedWorkoutStep step : decoded.workoutSteps()) {
+            jdbc.update("INSERT INTO activity_workout_step (activity_id, step_index, step_name, duration_type, planned_duration_seconds, planned_distance_meters, repeat_from_step_index, repeat_count, intensity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    activityId, step.stepIndex(), step.name(), step.durationType(), step.plannedDurationSeconds(),
+                    step.plannedDistanceMeters(), step.repeatFromStepIndex(), step.repeatCount(), step.intensity());
         }
-        for (GarminFitFixtureAdapter.DecodedLap lap : decoded.laps()) {
-            jdbc.update("INSERT INTO lap (activity_id, lap_number, duration_seconds, distance_meters, average_speed_mps, average_heart_rate, average_cadence, ascent_meters, descent_meters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    activityId, lap.lapNumber(), lap.durationSeconds(), lap.distanceMeters(), lap.averageSpeedMetersPerSecond(), lap.averageHeartRate(), lap.averageCadence(), lap.ascentMeters(), lap.descentMeters());
+        insertLaps(activityId, decoded.laps());
+        int pauseNumber = 1;
+        for (GarminFitFixtureAdapter.DecodedPause pause : decoded.pauses()) {
+            if (pause.startElapsedSeconds() != null && pause.endElapsedSeconds() != null
+                    && pause.startElapsedSeconds() >= 0 && pause.endElapsedSeconds() > pause.startElapsedSeconds()) {
+                jdbc.update("INSERT INTO activity_pause (activity_id, pause_number, start_elapsed_seconds, end_elapsed_seconds) VALUES (?, ?, ?, ?)",
+                        activityId, pauseNumber++, pause.startElapsedSeconds(), pause.endElapsedSeconds());
+            }
         }
         return activityId;
+    }
+
+    private Void mergeFitDetails(long activityId, GarminFitFixtureAdapter.DecodedActivity decoded) {
+        int storedRecords = jdbc.queryForObject("SELECT count(*) FROM activity_record WHERE activity_id = ?", Integer.class, activityId);
+        if (storedRecords == 0) {
+            insertRecords(activityId, decoded.records());
+        } else if (storedRecords == decoded.records().size() && recordsAlign(activityId, decoded.records())) {
+            mergeRecords(activityId, decoded.records());
+        }
+
+        int storedLaps = jdbc.queryForObject("SELECT count(*) FROM lap WHERE activity_id = ?", Integer.class, activityId);
+        if (storedLaps == 0) {
+            insertLaps(activityId, decoded.laps());
+        } else if (storedLaps == decoded.laps().size()) {
+            mergeLaps(activityId, decoded.laps());
+        }
+
+        for (GarminFitFixtureAdapter.DecodedWorkoutStep step : decoded.workoutSteps()) {
+            jdbc.update("INSERT INTO activity_workout_step (activity_id, step_index, step_name, duration_type, planned_duration_seconds, planned_distance_meters, repeat_from_step_index, repeat_count, intensity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (activity_id, step_index) DO UPDATE SET step_name = COALESCE(activity_workout_step.step_name, EXCLUDED.step_name), duration_type = COALESCE(activity_workout_step.duration_type, EXCLUDED.duration_type), planned_duration_seconds = COALESCE(activity_workout_step.planned_duration_seconds, EXCLUDED.planned_duration_seconds), planned_distance_meters = COALESCE(activity_workout_step.planned_distance_meters, EXCLUDED.planned_distance_meters), repeat_from_step_index = COALESCE(activity_workout_step.repeat_from_step_index, EXCLUDED.repeat_from_step_index), repeat_count = COALESCE(activity_workout_step.repeat_count, EXCLUDED.repeat_count), intensity = COALESCE(activity_workout_step.intensity, EXCLUDED.intensity)",
+                    activityId, step.stepIndex(), step.name(), step.durationType(), step.plannedDurationSeconds(),
+                    step.plannedDistanceMeters(), step.repeatFromStepIndex(), step.repeatCount(), step.intensity());
+        }
+
+        int storedPauses = jdbc.queryForObject("SELECT count(*) FROM activity_pause WHERE activity_id = ?", Integer.class, activityId);
+        if (storedPauses == 0 || storedPauses == decoded.pauses().size()) {
+            int pauseNumber = 1;
+            for (GarminFitFixtureAdapter.DecodedPause pause : decoded.pauses()) {
+                if (pause.startElapsedSeconds() != null && pause.endElapsedSeconds() != null
+                        && pause.startElapsedSeconds() >= 0 && pause.endElapsedSeconds() > pause.startElapsedSeconds()) {
+                    jdbc.update("INSERT INTO activity_pause (activity_id, pause_number, start_elapsed_seconds, end_elapsed_seconds) VALUES (?, ?, ?, ?) ON CONFLICT (activity_id, pause_number) DO NOTHING",
+                            activityId, pauseNumber++, pause.startElapsedSeconds(), pause.endElapsedSeconds());
+                }
+            }
+        }
+        return null;
+    }
+
+    private boolean recordsAlign(long activityId, List<GarminFitFixtureAdapter.DecodedRecord> records) {
+        List<ExistingRecord> stored = jdbc.query("SELECT elapsed_seconds, distance_meters FROM activity_record WHERE activity_id = ? ORDER BY record_index",
+                (result, row) -> new ExistingRecord(result.getObject(1, Double.class), result.getObject(2, Double.class)), activityId);
+        for (int index = 0; index < stored.size(); index++) {
+            var source = records.get(index);
+            if (!sameNullableMeasurement(stored.get(index).elapsedSeconds(), source.elapsedSeconds(), 0.001d)
+                    || !sameNullableMeasurement(stored.get(index).distanceMeters(), source.distanceMeters(), 0.001d)) return false;
+        }
+        return true;
+    }
+
+    private static boolean sameNullableMeasurement(Double left, Double right, double tolerance) {
+        return left == null || right == null ? left == right : Math.abs(left - right) <= tolerance;
+    }
+
+    private void mergeRecords(long activityId, List<GarminFitFixtureAdapter.DecodedRecord> records) {
+        for (int index = 0; index < records.size(); index++) {
+            var record = records.get(index);
+            jdbc.update("UPDATE activity_record SET step_length_m = COALESCE(step_length_m, ?), vertical_oscillation_cm = COALESCE(vertical_oscillation_cm, ?), vertical_ratio_percent = COALESCE(vertical_ratio_percent, ?), ground_contact_time_ms = COALESCE(ground_contact_time_ms, ?), ground_contact_balance_percent = COALESCE(ground_contact_balance_percent, ?), temperature_celsius = COALESCE(temperature_celsius, ?), power_watts = COALESCE(power_watts, ?), altitude_meters = COALESCE(altitude_meters, ?), speed_mps = COALESCE(speed_mps, ?), heart_rate = COALESCE(heart_rate, ?), cadence = COALESCE(cadence, ?) WHERE activity_id = ? AND record_index = ?",
+                    record.stepLengthMeters(), record.verticalOscillationCentimeters(), record.verticalRatioPercent(),
+                    record.groundContactTimeMilliseconds(), record.groundContactBalancePercent(),
+                    record.temperatureCelsius(), record.powerWatts(), record.altitudeMeters(),
+                    record.speedMetersPerSecond(), record.heartRate(), record.cadence(), activityId, index);
+        }
+    }
+
+    private void mergeLaps(long activityId, List<GarminFitFixtureAdapter.DecodedLap> laps) {
+        for (var lap : laps) {
+            jdbc.update("UPDATE lap SET workout_step_index = COALESCE(workout_step_index, ?), repetition_number = COALESCE(repetition_number, ?), start_elapsed_seconds = COALESCE(start_elapsed_seconds, ?), end_elapsed_seconds = COALESCE(end_elapsed_seconds, ?), start_distance_meters = COALESCE(start_distance_meters, ?), end_distance_meters = COALESCE(end_distance_meters, ?) WHERE activity_id = ? AND lap_number = ?",
+                    lap.workoutStepIndex(), lap.repetitionNumber(), lap.startElapsedSeconds(), lap.endElapsedSeconds(),
+                    lap.startDistanceMeters(), lap.endDistanceMeters(), activityId, lap.lapNumber());
+        }
+    }
+
+    private void insertRecords(long activityId, List<GarminFitFixtureAdapter.DecodedRecord> records) {
+        for (int index = 0; index < records.size(); index++) {
+            var record = records.get(index);
+            jdbc.update("INSERT INTO activity_record (activity_id, record_index, record_time, elapsed_seconds, distance_meters, latitude, longitude, altitude_meters, speed_mps, heart_rate, cadence, descent_meters, step_length_m, vertical_oscillation_cm, vertical_ratio_percent, ground_contact_time_ms, ground_contact_balance_percent, temperature_celsius, power_watts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    activityId, index, record.timestamp() == null ? null : Timestamp.from(record.timestamp()), record.elapsedSeconds(),
+                    record.distanceMeters(), record.latitude(), record.longitude(), record.altitudeMeters(), record.speedMetersPerSecond(),
+                    record.heartRate(), record.cadence(), record.descentMeters(), record.stepLengthMeters(),
+                    record.verticalOscillationCentimeters(), record.verticalRatioPercent(), record.groundContactTimeMilliseconds(),
+                    record.groundContactBalancePercent(), record.temperatureCelsius(), record.powerWatts());
+        }
+    }
+
+    private void insertLaps(long activityId, List<GarminFitFixtureAdapter.DecodedLap> laps) {
+        for (var lap : laps) {
+            jdbc.update("INSERT INTO lap (activity_id, lap_number, duration_seconds, distance_meters, average_speed_mps, average_heart_rate, average_cadence, ascent_meters, descent_meters, workout_step_index, repetition_number, start_elapsed_seconds, end_elapsed_seconds, start_distance_meters, end_distance_meters) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    activityId, lap.lapNumber(), lap.durationSeconds(), lap.distanceMeters(), lap.averageSpeedMetersPerSecond(),
+                    lap.averageHeartRate(), lap.averageCadence(), lap.ascentMeters(), lap.descentMeters(), lap.workoutStepIndex(),
+                    lap.repetitionNumber(), lap.startElapsedSeconds(), lap.endElapsedSeconds(), lap.startDistanceMeters(),
+                    lap.endDistanceMeters());
+        }
     }
 
     private boolean retainOriginal(String hash, Path temporary, long activityId) {
@@ -222,4 +328,5 @@ public class ImportService {
     public record ImportBatchError(String code, String message) { }
     private record StagedFile(Path path, String hash, long size) { }
     private record ActivityIdentity(long id, Double elapsedSeconds, Double distanceMeters) { }
+    private record ExistingRecord(Double elapsedSeconds, Double distanceMeters) { }
 }
