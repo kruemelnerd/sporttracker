@@ -236,9 +236,7 @@ export function createWorkoutIntervals(steps: WorkoutStep[], laps: Lap[]) {
         && lap.distanceMeters > 0 && lap.durationSeconds > 0
         ? 1000 * lap.durationSeconds / lap.distanceMeters : null
     return [{
-      id: lap.repetitionNumber === null || lap.repetitionNumber === undefined
-        ? `step:${step.stepIndex}:lap:${lap.lapNumber}`
-        : `step:${step.stepIndex}:rep:${lap.repetitionNumber}`,
+      id: `step:${step.stepIndex}:lap:${lap.lapNumber}`,
       executionOrder: 0,
       lapNumber: lap.lapNumber,
       lapNumbers: [lap.lapNumber],

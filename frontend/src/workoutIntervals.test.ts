@@ -265,9 +265,20 @@ describe('workout interval presentation', () => {
     expect(result.intervals).toHaveLength(2)
     expect(result.intervals.map(({ id, lapNumbers, startElapsedSeconds, endElapsedSeconds, averageHeartRate }) =>
       ({ id, lapNumbers, startElapsedSeconds, endElapsedSeconds, averageHeartRate }))).toEqual([
-      { id: 'step:2:rep:1', lapNumbers: [1, 2], startElapsedSeconds: 0, endElapsedSeconds: 60, averageHeartRate: 156.66666666666666 },
-      { id: 'step:2:rep:2', lapNumbers: [3], startElapsedSeconds: 60, endElapsedSeconds: 90, averageHeartRate: 150 },
+      { id: 'step:2:lap:1', lapNumbers: [1, 2], startElapsedSeconds: 0, endElapsedSeconds: 60, averageHeartRate: 156.66666666666666 },
+      { id: 'step:2:lap:3', lapNumbers: [3], startElapsedSeconds: 60, endElapsedSeconds: 90, averageHeartRate: 150 },
     ])
+  })
+
+  it('keeps separated executions unique even when FIT repeats the same step and repetition number', () => {
+    const result = createWorkoutIntervals([step(1), step(2)], [
+      lap(1, 2, { repetitionNumber: 1 }),
+      lap(2, 1, { repetitionNumber: 1 }),
+      lap(3, 2, { repetitionNumber: 1 }),
+    ])
+
+    expect(result.intervals[0].id).not.toBe(result.intervals[2].id)
+    expect(new Set(result.intervals.map(({ id }) => id)).size).toBe(result.intervals.length)
   })
 
   it('labels tooltip phase and reliable repeat position', () => {
