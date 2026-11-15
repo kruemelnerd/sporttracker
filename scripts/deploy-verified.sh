@@ -30,6 +30,8 @@ repo_root=$(cd -- "$script_dir/.." && pwd -P)
 compose_file=$repo_root/compose.production.yaml
 docker=(docker)
 compose=("${docker[@]}" compose --env-file "$env_file" -p "$project" -f "$compose_file")
+source "$script_dir/production-compose.sh"
+production_compose_args "$env_file" compose || fail 'invalid Garmin production configuration'
 override=$(mktemp)
 saved_env=
 updated_env=

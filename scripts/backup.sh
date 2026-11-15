@@ -58,6 +58,9 @@ on_exit() {
   exit "$rc"
 }
 compose=("${docker[@]}" compose --env-file "$env_file" -p "$project" -f "$compose_file")
+script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+source "$script_dir/production-compose.sh"
+production_compose_args "$env_file" compose || fail 'invalid Garmin production configuration'
 app_id=$("${compose[@]}" ps -q app) || fail "cannot identify app service"
 db_id=$("${compose[@]}" ps -q db) || fail "cannot identify db service"
 [[ -n $app_id && -n $db_id ]] || fail "app and db must both be running in the specified project"

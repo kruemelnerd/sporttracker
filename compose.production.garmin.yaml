@@ -2,7 +2,6 @@ services:
   app:
     environment:
       GARMIN_PERSONAL_API_ENABLED: "true"
-      INTERVALS_ICU_ENABLED: "false"
     secrets:
       - source: garmin_personal_api_key
         target: GARMIN_PERSONAL_API_KEY

@@ -7,14 +7,19 @@
     <section class="intervals-card garmin-card" aria-labelledby="garmin-title" data-testid="garmin-card">
       <div class="intervals-heading">
         <div><h2 id="garmin-title">Garmin Connect</h2><p>Primäre FIT-Quelle</p></div>
-        <span class="connection-status" :class="{ connected: garminStatus?.connected }" data-testid="garmin-status" role="status" aria-live="polite">
-          {{ garminStatus?.connected ? '● Verbindung bestätigt' : garminStatus?.configured ? '○ Konfiguriert, noch nicht verbunden' : garminStatus?.apiKeyPresent ? '○ Deaktiviert' : garminStatus ? '○ Nicht konfiguriert' : garminLoading ? 'Status wird geladen' : 'Status nicht verfügbar' }}
+        <span class="connection-status" :class="garminState.color" data-testid="garmin-status" role="status" aria-live="polite">
+          {{ garminState.label }}
         </span>
       </div>
-      <p v-if="garminStatus && !garminStatus.configured" class="intervals-hint">Garmin-Sync aktivieren und <code>GARMIN_PERSONAL_API_KEY</code> ausschließlich im Backend konfigurieren.</p>
+      <p v-if="garminStatus && !garminStatus.enabled" class="intervals-hint">Die Garmin-Integration ist in dieser Installation deaktiviert.</p>
+      <p v-else-if="garminStatus?.enabled && !garminStatus.apiKeyPresent" class="intervals-hint">Der Garmin-Zugangsschlüssel fehlt auf dem Server.</p>
+      <p v-else-if="garminStatus && !garminStatus.configured" class="intervals-hint">Die Garmin-Konfiguration ist unvollständig. Bitte die Serverkonfiguration prüfen.</p>
       <p v-else-if="garminLoading" class="intervals-hint" role="status">Status wird geladen …</p>
       <p v-else-if="garminStatus?.running" class="intervals-hint" role="status" aria-live="polite">Synchronisierung läuft …</p>
+      <p v-else-if="garminState.overdue" class="intervals-hint" role="status">Seit über 60 Minuten wurde kein automatischer Synchronisierungsversuch gestartet.</p>
+      <p class="sync-time">Letzter Synchronisierungsversuch: <time v-if="garminStatus?.lastAttemptAt">{{ formatSyncTime(garminStatus.lastAttemptAt) }}</time><span v-else>Noch kein Versuch</span></p>
       <p class="sync-time">Letzte erfolgreiche Synchronisierung: <time v-if="garminStatus?.lastSuccessfulSyncAt">{{ formatSyncTime(garminStatus.lastSuccessfulSyncAt) }}</time><span v-else>Noch keine erfolgreiche Synchronisierung</span></p>
+      <p v-if="garminStatus?.lastResult" class="sync-time">Ergebnis des letzten Versuchs: {{ garminStatus.lastResult.failed ? 'Fehlgeschlagen' : 'Abgeschlossen' }}</p>
       <section v-if="garminStatus?.lastResult" class="intervals-result" data-testid="garmin-result" aria-live="polite">
         <p>{{ garminStatus.lastResult.checked }} geprüft · {{ garminStatus.lastResult.imported }} neu · {{ garminStatus.lastResult.alreadyPresent }} bereits vorhanden</p>
         <p v-if="garminStatus.lastResult.skipped">{{ garminStatus.lastResult.skipped }} übersprungen</p>
@@ -184,6 +189,22 @@ const isOutcome = (state: QueueState): state is ImportOutcome['status'] =>
 
 const isRateLimited = computed(() => !!intervalsStatus.value?.retryAfterUntil && Date.parse(intervalsStatus.value.retryAfterUntil) > Date.now())
 const isGarminRateLimited = computed(() => !!garminStatus.value?.retryAfterUntil && Date.parse(garminStatus.value.retryAfterUntil) > Date.now())
+const garminState = computed(() => {
+  const status = garminStatus.value
+  const overdue = !!status?.configured && !isGarminRateLimited.value
+    && !status.running && !!status.lastAutomaticSyncTriggerAt
+    && Date.now() - Date.parse(status.lastAutomaticSyncTriggerAt) > Math.max(60 * 60_000, status.syncIntervalSeconds * 2_000)
+  if (!status) return { label: garminLoading.value ? 'Status wird geladen' : 'Status nicht verfügbar', color: '', overdue: false }
+  if (!status.enabled) return { label: 'Garmin deaktiviert', color: '', overdue: false }
+  if (!status.apiKeyPresent) return { label: 'API-Key fehlt', color: 'error', overdue: false }
+  if (!status.configured) return { label: 'Konfiguration unvollständig', color: 'warning', overdue: false }
+  if (status.running) return { label: 'Synchronisierung läuft', color: 'running', overdue: false }
+  if (isGarminRateLimited.value) return { label: 'Synchronisierung pausiert', color: 'warning', overdue: false }
+  if (status.lastResult?.failed) return { label: 'Synchronisierung fehlgeschlagen', color: 'error', overdue: false }
+  if (overdue) return { label: 'Synchronisierung überfällig', color: 'warning', overdue: true }
+  if (status.connected) return { label: 'Verbindung bestätigt', color: 'connected', overdue: false }
+  return { label: 'Konfiguriert, noch nicht verbunden', color: '', overdue: false }
+})
 
 const phrases: Record<DataManagementAction, string> = {
   DELETE_GARMIN: 'GARMIN LÖSCHEN',
@@ -278,6 +299,11 @@ function pollGarmin() {
   if (garminStatus.value?.running) garminPoll = window.setTimeout(() => { void loadGarminStatus() }, 2000)
   else if (isGarminRateLimited.value && garminStatus.value?.retryAfterUntil) {
     const wait = Math.min(Date.parse(garminStatus.value.retryAfterUntil) - Date.now() + 50, 2_147_000_000)
+    garminPoll = window.setTimeout(() => { void loadGarminStatus() }, Math.max(0, wait))
+  } else if (garminStatus.value?.configured && garminStatus.value.lastAutomaticSyncTriggerAt) {
+    const threshold = Math.max(60 * 60_000, garminStatus.value.syncIntervalSeconds * 2_000)
+    const wait = garminState.value.overdue ? 60_000
+      : Date.parse(garminStatus.value.lastAutomaticSyncTriggerAt) + threshold - Date.now() + 50
     garminPoll = window.setTimeout(() => { void loadGarminStatus() }, Math.max(0, wait))
   }
 }
@@ -389,6 +415,9 @@ async function retry(item: QueueItem) {
 .intervals-heading p, .sync-time, .intervals-hint, .intervals-result p { margin: .25rem 0 0; color: var(--color-muted); font-size: .9rem; }
 .connection-status { color: var(--color-muted); font-size: .875rem; font-weight: 600; white-space: nowrap; }
 .connection-status.connected { color: var(--color-accent-strong); }
+.connection-status.error { color: var(--color-danger, #a12622); }
+.connection-status.warning { color: #8a6200; }
+.connection-status.running { color: #1769aa; }
 .intervals-hint code { padding: .1rem .25rem; background: var(--color-canvas); border-radius: .25rem; }
 .intervals-activity-results { display: grid; gap: .35rem; margin: .5rem 0 0; padding-left: 1.25rem; color: var(--color-muted); font-size: .875rem; }
 .intervals-activity-results .failed, .intervals-error { color: var(--color-danger, #a12622); }
