@@ -34,6 +34,8 @@ class ImportIdentityTests {
     @AfterEach
     void cleanup() {
         jdbc.update("DELETE FROM activity WHERE start_time = ?", java.sql.Timestamp.from(Instant.parse("2026-01-01T10:00:00Z")));
+        jdbc.update("DELETE FROM activity WHERE start_time = ?", java.sql.Timestamp.from(Instant.parse("2026-02-01T10:00:00Z")));
+        jdbc.update("DELETE FROM activity WHERE start_time = ?", java.sql.Timestamp.from(Instant.parse("2026-02-02T10:00:00Z")));
     }
 
     @Test
@@ -45,7 +47,7 @@ class ImportIdentityTests {
                 boolean first = calls.getAndIncrement() == 0;
                 return new DecodedActivity("running", null, Instant.parse("2026-01-01T10:00:00Z"),
                         first ? 600d : 1800d, first ? 600d : 1800d, first ? 1000d : 5000d,
-                        first ? 1.66d : 2.77d, null, null, null, null, null, List.of(), List.of());
+                        first ? 1.66d : 2.77d, null, null, null, null, null, List.of(), List.of(), List.of(), List.of());
             }
         };
         ImportService imports = new ImportService(adapter, jdbc, new TransactionTemplate(transactionManager),
@@ -64,7 +66,7 @@ class ImportIdentityTests {
         jdbc.update("INSERT INTO activity (sport, start_time, elapsed_seconds, distance_meters) VALUES ('running', ?, 600, 1000), ('running', ?, 600, 1000)",
                 java.sql.Timestamp.from(start), java.sql.Timestamp.from(start));
         var decoded = new GarminFitFixtureAdapter.DecodedActivity("running", null, start, 600d, 600d, 1000d,
-                1.66d, null, null, null, null, null, List.of(), List.of());
+                1.66d, null, null, null, null, null, List.of(), List.of(), List.of(), List.of());
         var imports = new ImportService(new GarminFitFixtureAdapter() {
             @Override public DecodedActivity decode(InputStream ignored) { return decoded; }
         }, jdbc, new TransactionTemplate(transactionManager),
@@ -85,7 +87,7 @@ class ImportIdentityTests {
     @Test
     void classifiesNonDuplicateIntegrityViolationsAsFailed() {
         var decoded = new GarminFitFixtureAdapter.DecodedActivity("running", null, Instant.parse("2026-01-02T10:00:00Z"),
-                600d, 600d, -1d, 1.66d, null, null, null, null, null, List.of(), List.of());
+                600d, 600d, -1d, 1.66d, null, null, null, null, null, List.of(), List.of(), List.of(), List.of());
         var imports = new ImportService(new GarminFitFixtureAdapter() {
             @Override public DecodedActivity decode(InputStream ignored) { return decoded; }
         }, jdbc, new TransactionTemplate(transactionManager),
@@ -96,6 +98,80 @@ class ImportIdentityTests {
 
         assertEquals("FAILED", outcome.status());
         assertEquals("IMPORT_FAILED", outcome.code());
+    }
+
+    @Test
+    void persistsRunningDynamicsWorkoutIntervalsAndTimerPauses() {
+        Instant start = Instant.parse("2026-02-01T10:00:00Z");
+        var record = new GarminFitFixtureAdapter.DecodedRecord(start, 0d, 0d, null, null, null, null,
+                null, null, null, 1.234d, 7.8d, 8.3d, 240d, 49.7d, 12d, 250d);
+        var lap = new GarminFitFixtureAdapter.DecodedLap(1, 10d, 400d, null, null, null, null, null,
+                1, 1, 0d, 10d, 0d, 400d);
+        var step = new GarminFitFixtureAdapter.DecodedWorkoutStep(1, "Fast", "distance", null, 400d,
+                null, null, "active");
+        var pause = new GarminFitFixtureAdapter.DecodedPause(12d, 15d);
+        var decoded = new GarminFitFixtureAdapter.DecodedActivity("running", null, start, 30d, 27d,
+                1500d, null, null, null, null, null, null, List.of(record), List.of(lap),
+                List.of(step), List.of(pause));
+        var imports = new ImportService(new GarminFitFixtureAdapter() {
+            @Override public DecodedActivity decode(InputStream ignored) { return decoded; }
+        }, jdbc, new TransactionTemplate(transactionManager),
+                Path.of(System.getProperty("java.io.tmpdir"), "running-dashboard-identity-tests").toString(),
+                new ImportProperties(10, 10_485_760, 104_857_600));
+
+        var outcome = imports.importFiles(List.of(file("dynamics.fit", new byte[] {5}))).outcomes().getFirst();
+        long activityId = outcome.activityId();
+
+        assertEquals("IMPORTED", outcome.status());
+        assertEquals(1.234d, jdbc.queryForObject("SELECT step_length_m FROM activity_record WHERE activity_id = ?", Double.class, activityId));
+        assertEquals(7.8d, jdbc.queryForObject("SELECT vertical_oscillation_cm FROM activity_record WHERE activity_id = ?", Double.class, activityId));
+        assertEquals(8.3d, jdbc.queryForObject("SELECT vertical_ratio_percent FROM activity_record WHERE activity_id = ?", Double.class, activityId));
+        assertEquals(240d, jdbc.queryForObject("SELECT ground_contact_time_ms FROM activity_record WHERE activity_id = ?", Double.class, activityId));
+        assertEquals(49.7d, jdbc.queryForObject("SELECT ground_contact_balance_percent FROM activity_record WHERE activity_id = ?", Double.class, activityId));
+        assertEquals(12d, jdbc.queryForObject("SELECT temperature_celsius FROM activity_record WHERE activity_id = ?", Double.class, activityId));
+        assertEquals(250d, jdbc.queryForObject("SELECT power_watts FROM activity_record WHERE activity_id = ?", Double.class, activityId));
+        assertEquals(1, jdbc.queryForObject("SELECT workout_step_index FROM lap WHERE activity_id = ?", Integer.class, activityId));
+        assertEquals(1, jdbc.queryForObject("SELECT repetition_number FROM lap WHERE activity_id = ?", Integer.class, activityId));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity_workout_step WHERE activity_id = ?", Integer.class, activityId));
+        assertEquals(12d, jdbc.queryForObject("SELECT start_elapsed_seconds FROM activity_pause WHERE activity_id = ?", Double.class, activityId));
+        assertEquals(15d, jdbc.queryForObject("SELECT end_elapsed_seconds FROM activity_pause WHERE activity_id = ?", Double.class, activityId));
+    }
+
+    @Test
+    void changedByteReimportFillsMissingFitDataWithoutReplacingExistingEnrichment() {
+        Instant start = Instant.parse("2026-02-02T10:00:00Z");
+        var sparseRecord = new GarminFitFixtureAdapter.DecodedRecord(start, 0d, 0d, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null);
+        var richRecord = new GarminFitFixtureAdapter.DecodedRecord(start, 0d, 0d, null, null, null, null,
+                null, null, null, 1.5d, 8d, 8d, 250d, 50d, 10d, 200d);
+        var lap = new GarminFitFixtureAdapter.DecodedLap(1, 10d, 400d, null, null, null, null, null,
+                1, 1, 0d, 10d, 0d, 400d);
+        var step = new GarminFitFixtureAdapter.DecodedWorkoutStep(1, "Fast", "distance", null, 400d,
+                null, null, "active");
+        var sparse = new GarminFitFixtureAdapter.DecodedActivity("running", null, start, 30d, 27d, 1500d,
+                null, null, null, null, null, null, List.of(sparseRecord), List.of(), List.of(), List.of());
+        var rich = new GarminFitFixtureAdapter.DecodedActivity("running", null, start, 30d, 27d, 1500d,
+                null, null, null, null, null, null, List.of(richRecord), List.of(lap), List.of(step),
+                List.of(new GarminFitFixtureAdapter.DecodedPause(12d, 15d)));
+        AtomicInteger calls = new AtomicInteger();
+        var imports = new ImportService(new GarminFitFixtureAdapter() {
+            @Override public DecodedActivity decode(InputStream ignored) { return calls.getAndIncrement() == 0 ? sparse : rich; }
+        }, jdbc, new TransactionTemplate(transactionManager),
+                Path.of(System.getProperty("java.io.tmpdir"), "running-dashboard-identity-tests").toString(),
+                new ImportProperties(10, 10_485_760, 104_857_600));
+
+        long activityId = imports.importFiles(List.of(file("first.fit", new byte[] {6}))).outcomes().getFirst().activityId();
+        jdbc.update("UPDATE activity SET garmin_activity_name = 'Keep this name', garmin_training_effect = 2.5 WHERE id = ?", activityId);
+        var duplicate = imports.importFiles(List.of(file("reexport.fit", new byte[] {7}))).outcomes().getFirst();
+
+        assertEquals("DUPLICATE", duplicate.status());
+        assertEquals(1.5d, jdbc.queryForObject("SELECT step_length_m FROM activity_record WHERE activity_id = ?", Double.class, activityId));
+        assertEquals("Keep this name", jdbc.queryForObject("SELECT garmin_activity_name FROM activity WHERE id = ?", String.class, activityId));
+        assertEquals(2.5d, jdbc.queryForObject("SELECT garmin_training_effect FROM activity WHERE id = ?", Double.class, activityId));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity_record WHERE activity_id = ?", Integer.class, activityId));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM lap WHERE activity_id = ?", Integer.class, activityId));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity_workout_step WHERE activity_id = ?", Integer.class, activityId));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM activity_pause WHERE activity_id = ?", Integer.class, activityId));
     }
 
     @Test

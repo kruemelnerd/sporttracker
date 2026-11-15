@@ -50,14 +50,42 @@
         <h2 id="charts-heading">Trainingsverlauf</h2>
         <p v-if="!charts.pace.length">Für diesen Lauf sind keine Messpunkte vorhanden.</p>
         <div v-else class="charts">
-          <div ref="paceElement" class="chart" data-testid="pace-chart" role="img" :aria-label="`Pace-Diagramm (${charts.pace.filter(([, value]) => value !== null).length} Werte)`"></div>
-          <div ref="heartElement" class="chart" data-testid="heart-rate-chart" role="img" aria-label="Herzfrequenz-Diagramm"></div>
-          <div ref="elevationElement" class="chart" data-testid="elevation-chart" role="img" :aria-label="`Höhenprofil-Diagramm (${charts.elevation.filter(([, value]) => value !== null).length} Werte)`"></div>
-          <div v-if="charts.cadence.some((point) => point[1] !== null)" ref="cadenceElement" class="chart" role="img" aria-label="Kadenz-Diagramm"></div>
+          <div v-if="hasValues(charts.pace)" ref="paceElement" class="chart" data-testid="pace-chart" role="img" :aria-label="`Pace-Diagramm (${charts.pace.filter(([, value]) => value !== null).length} Werte)`"></div>
+          <div v-if="hasValues(charts.heartRate)" ref="heartElement" class="chart" data-testid="heart-rate-chart" role="img" aria-label="Herzfrequenz-Diagramm"></div>
+          <div v-if="hasValues(charts.elevation)" ref="elevationElement" class="chart" data-testid="elevation-chart" role="img" :aria-label="`Höhenprofil-Diagramm (${charts.elevation.filter(([, value]) => value !== null).length} Werte)`"></div>
+          <div v-if="hasValues(charts.cadence)" ref="cadenceElement" class="chart" data-testid="cadence-chart" role="img" aria-label="Kadenz-Diagramm"></div>
+          <div v-if="hasValues(charts.stepLength)" ref="stepLengthElement" class="chart" data-testid="step-length-chart" role="img" aria-label="Schrittlänge-Diagramm"></div>
+          <div v-if="hasValues(charts.verticalOscillation)" ref="verticalOscillationElement" class="chart" data-testid="vertical-oscillation-chart" role="img" aria-label="Vertikale Bewegung-Diagramm"></div>
+          <div v-if="hasValues(charts.verticalRatio)" ref="verticalRatioElement" class="chart" data-testid="vertical-ratio-chart" role="img" aria-label="Vertikales Verhältnis-Diagramm"></div>
+          <div v-if="hasValues(charts.groundContactTime)" ref="groundContactTimeElement" class="chart" data-testid="ground-contact-time-chart" role="img" aria-label="Bodenkontaktzeit-Diagramm"></div>
+          <div v-if="hasValues(charts.groundContactBalance)" ref="groundContactBalanceElement" class="chart" data-testid="ground-contact-balance-chart" role="img" aria-label="Bodenkontaktbalance-Diagramm"></div>
+          <div v-if="hasValues(charts.temperature)" ref="temperatureElement" class="chart" data-testid="temperature-chart" role="img" aria-label="Temperatur-Diagramm"></div>
+          <div v-if="hasValues(charts.power)" ref="powerElement" class="chart" data-testid="power-chart" role="img" aria-label="Laufleistung-Diagramm"></div>
         </div>
       </section>
 
-      <section class="detail-panel" aria-labelledby="laps-heading">
+      <section v-if="intervalRows.length" class="detail-panel" aria-labelledby="intervals-heading" data-testid="workout-intervals">
+        <h2 id="intervals-heading">Workout-Intervalle</h2>
+        <div class="table-wrap" role="region" aria-label="Workout-Intervalltabelle; horizontal scrollbar auf kleinen Bildschirmen" tabindex="0">
+          <table>
+            <thead><tr><th>Phase</th><th>Ausführung</th><th>Distanz</th><th>Dauer</th><th>Vorgabe</th></tr></thead>
+            <tbody><tr v-for="interval in intervalRows" :key="`${interval.stepIndex}-${interval.lapNumber ?? 'planned'}`">
+              <td>{{ interval.name }}</td>
+              <td>{{ interval.lapNumber === null ? 'Keine zugeordnete Runde' : `Runde ${interval.lapNumber}${interval.repetitionNumber === null ? '' : ` · Wiederholung ${interval.repetitionNumber}`}` }}</td>
+              <td>{{ distance(interval.lap?.distanceMeters ?? interval.plannedDistanceMeters) }}</td>
+              <td>{{ duration(interval.lap?.durationSeconds ?? interval.plannedDurationSeconds) }}</td>
+              <td>{{ interval.durationType === 'distance' ? 'Distanz' : interval.durationType === 'time' ? 'Zeit' : interval.durationType ?? '–' }}</td>
+            </tr></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section v-if="detail.pauses?.length" class="detail-panel" aria-labelledby="pauses-heading" data-testid="timer-pauses">
+        <h2 id="pauses-heading">Timer-Pausen</h2>
+        <ul><li v-for="(pause, index) in detail.pauses" :key="index">{{ elapsedClock(pause.startElapsedSeconds) }}–{{ elapsedClock(pause.endElapsedSeconds) }}</li></ul>
+      </section>
+
+      <section class="detail-panel" aria-labelledby="laps-heading" data-testid="laps">
         <h2 id="laps-heading">Runden</h2>
         <p v-if="!laps.length">Für diesen Lauf sind keine Runden oder zuverlässig ableitbaren Kilometer-Splits vorhanden.</p>
         <div v-else class="table-wrap" role="region" aria-label="Rundentabelle; horizontal scrollbar auf kleinen Bildschirmen" tabindex="0">
@@ -83,14 +111,14 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { connect, init, use as echartsUse, type ECharts } from 'echarts/core'
 import { LineChart } from 'echarts/charts'
-import { DataZoomComponent, GridComponent, TitleComponent, TooltipComponent } from 'echarts/components'
+import { DataZoomComponent, GridComponent, MarkAreaComponent, TitleComponent, TooltipComponent } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { getActivity, type ActivityDetail } from '../api'
 import { activityPaceSpeed, chartSeries, descendedMeters, displayCadence, formatPace, lapPaceSecondsPerKm, lapRows, paceAxis, recordExtrema } from '../activityDetail'
 import MetricCard from '../components/MetricCard.vue'
 import TrainingSummaryExport from '../components/TrainingSummaryExport.vue'
 
-echartsUse([LineChart, DataZoomComponent, GridComponent, TitleComponent, TooltipComponent, CanvasRenderer])
+echartsUse([LineChart, DataZoomComponent, GridComponent, MarkAreaComponent, TitleComponent, TooltipComponent, CanvasRenderer])
 
 const currentRoute = useRoute()
 const detail = ref<ActivityDetail | null>(null)
@@ -101,6 +129,13 @@ const paceElement = ref<HTMLElement | null>(null)
 const heartElement = ref<HTMLElement | null>(null)
 const elevationElement = ref<HTMLElement | null>(null)
 const cadenceElement = ref<HTMLElement | null>(null)
+const stepLengthElement = ref<HTMLElement | null>(null)
+const verticalOscillationElement = ref<HTMLElement | null>(null)
+const verticalRatioElement = ref<HTMLElement | null>(null)
+const groundContactTimeElement = ref<HTMLElement | null>(null)
+const groundContactBalanceElement = ref<HTMLElement | null>(null)
+const temperatureElement = ref<HTMLElement | null>(null)
+const powerElement = ref<HTMLElement | null>(null)
 let map: ReturnType<typeof L.map> | null = null
 let chartInstances: ECharts[] = []
 let chartResizeObserver: ResizeObserver | null = null
@@ -112,6 +147,30 @@ const routeVisible = computed(() => routeCoords.value.length >= 2)
 const routePointsForMap = computed(() => routeVisible.value ? routeCoords.value : [])
 const charts = computed(() => chartSeries(detail.value?.records ?? []))
 const laps = computed(() => lapRows(detail.value?.laps ?? [], detail.value?.records ?? []))
+const intervalRows = computed(() => {
+  const steps = detail.value?.workoutSteps ?? []
+  return steps.flatMap((step) => {
+    const linkedLaps = (detail.value?.laps ?? []).filter((lap) => lap.workoutStepIndex === step.stepIndex)
+    const rows = linkedLaps.length ? linkedLaps : [null]
+    return rows.map((lap) => ({
+      ...step,
+      name: step.name ?? `Schritt ${step.stepIndex + 1}`,
+      lap,
+      lapNumber: lap?.lapNumber ?? null,
+      repetitionNumber: lap?.repetitionNumber ?? null,
+      plannedDurationSeconds: step.plannedDurationSeconds,
+      plannedDistanceMeters: step.plannedDistanceMeters,
+    }))
+  })
+})
+const intervalAreas = computed(() => intervalRows.value.flatMap((row) => {
+  const lap = row.lap
+  const start = charts.value.coordinate === 'distance' ? lap?.startDistanceMeters : lap?.startElapsedSeconds
+  const end = charts.value.coordinate === 'distance' ? lap?.endDistanceMeters : lap?.endElapsedSeconds
+  return start !== null && start !== undefined && end !== null && end !== undefined && end > start
+    ? [{ start, end, label: row.name }]
+    : []
+}))
 const paceSpeed = computed(() => detail.value ? activityPaceSpeed(detail.value) : { averageSpeedMetersPerSecond: null, movingSpeedMetersPerSecond: null, maximumSpeedMetersPerSecond: null, averagePaceSecondsPerKm: null, movingPaceSecondsPerKm: null, bestPaceSecondsPerKm: null })
 const recordValues = computed(() => recordExtrema(detail.value?.records ?? []))
 const paceForRun = computed(() => {
@@ -122,6 +181,7 @@ const descent = computed(() => {
   return descendedMeters(detail.value?.records ?? [])
 })
 const garminMetricsPresent = computed(() => Object.values(detail.value?.garminTrainingMetrics ?? {}).some((value) => value !== null))
+const hasValues = (series: [number, number | null][]) => series.some(([, value]) => value !== null)
 
 const distance = (meters: number | null) => meters === null ? '–' : `${(meters / 1000).toFixed(2)} km`
 const duration = (seconds: number | null) => {
@@ -134,6 +194,10 @@ const kmh = (value: number) => `${new Intl.NumberFormat('de-DE', { maximumFracti
 const bpm = (value: number | null) => value === null ? '–' : `${value} bpm`
 const garminValue = (value: number) => new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 }).format(value)
 const date = (value: string) => new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short' }).format(new Date(value))
+const elapsedClock = (seconds: number) => {
+  const total = Math.max(0, Math.floor(seconds))
+  return `${String(Math.floor(total / 3600)).padStart(2, '0')}:${String(Math.floor(total / 60) % 60).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`
+}
 
 async function loadActivity(id: string) {
   const currentRequest = ++requestId
@@ -154,10 +218,19 @@ async function loadActivity(id: string) {
       L.marker(routePointsForMap.value[0]).addTo(map).bindTooltip('Start')
       L.marker(routePointsForMap.value.at(-1)!).addTo(map).bindTooltip('Ziel')
     }
-    if (charts.value.pace.length && paceElement.value && heartElement.value && elevationElement.value) {
-      chartInstances = [makeChart(paceElement.value, 'Pace', charts.value.pace, 'min/km', true), makeChart(heartElement.value, 'Herzfrequenz', charts.value.heartRate, 'bpm'), makeChart(elevationElement.value, 'Höhenprofil', charts.value.elevation, 'm')]
-      if (charts.value.cadence.some((point) => point[1] !== null) && cadenceElement.value) chartInstances.push(makeChart(cadenceElement.value, 'Kadenz', charts.value.cadence.map(([distance, value]) => [distance, value === null ? null : value * 2]), 'steps/min'))
-      connect(chartInstances)
+    if (charts.value.pace.length) {
+      if (hasValues(charts.value.pace) && paceElement.value) chartInstances.push(makeChart(paceElement.value, 'Pace', charts.value.pace, 'min/km', true))
+      if (hasValues(charts.value.heartRate) && heartElement.value) chartInstances.push(makeChart(heartElement.value, 'Herzfrequenz', charts.value.heartRate, 'bpm'))
+      if (hasValues(charts.value.elevation) && elevationElement.value) chartInstances.push(makeChart(elevationElement.value, 'Höhenprofil', charts.value.elevation, 'm'))
+      if (hasValues(charts.value.cadence) && cadenceElement.value) chartInstances.push(makeChart(cadenceElement.value, 'Kadenz', charts.value.cadence.map(([x, value]) => [x, value === null ? null : value * 2]), 'steps/min'))
+      if (hasValues(charts.value.stepLength) && stepLengthElement.value) chartInstances.push(makeChart(stepLengthElement.value, 'Schrittlänge', charts.value.stepLength, 'm'))
+      if (hasValues(charts.value.verticalOscillation) && verticalOscillationElement.value) chartInstances.push(makeChart(verticalOscillationElement.value, 'Vertikale Bewegung', charts.value.verticalOscillation, 'cm'))
+      if (hasValues(charts.value.verticalRatio) && verticalRatioElement.value) chartInstances.push(makeChart(verticalRatioElement.value, 'Vertikales Verhältnis', charts.value.verticalRatio, '%'))
+      if (hasValues(charts.value.groundContactTime) && groundContactTimeElement.value) chartInstances.push(makeChart(groundContactTimeElement.value, 'Bodenkontaktzeit', charts.value.groundContactTime, 'ms'))
+      if (hasValues(charts.value.groundContactBalance) && groundContactBalanceElement.value) chartInstances.push(makeChart(groundContactBalanceElement.value, 'Bodenkontaktbalance', charts.value.groundContactBalance, '%'))
+      if (hasValues(charts.value.temperature) && temperatureElement.value) chartInstances.push(makeChart(temperatureElement.value, 'Temperatur', charts.value.temperature, '°C'))
+      if (hasValues(charts.value.power) && powerElement.value) chartInstances.push(makeChart(powerElement.value, 'Laufleistung', charts.value.power, 'W'))
+      if (chartInstances.length > 1) connect(chartInstances)
       chartResizeObserver = new ResizeObserver((entries) => {
         const changedElements = new Set(entries.map(({ target }) => target))
         chartInstances.filter((chart) => changedElements.has(chart.getDom())).forEach((chart) => chart.resize())
@@ -180,12 +253,12 @@ function makeChart(element: HTMLElement, name: string, data: [number, number | n
     grid: { left: 58, right: 20, top: 42, bottom: 32 },
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' }, formatter: (items: Array<{ data: [number, number | null] }>) => {
       const [x, y] = items[0].data
-      return `${(x / 1000).toFixed(2)} km<br>${y === null ? '–' : unit === 'min/km' ? formatPace(y) : `${y} ${unit}`}`
-    } },
-    xAxis: { type: 'value', name: 'Distanz (km)', axisLabel: { formatter: (value: number) => (value / 1000).toFixed(1) } },
-    yAxis: { type: 'value', name: unit, inverse, scale: true, axisLabel: { formatter: (value: number) => unit === 'min/km' ? paceAxis(value) : value } },
-    dataZoom: [{ type: 'inside', xAxisIndex: 0 }, { type: 'slider', xAxisIndex: 0, height: 16, bottom: 4 }],
-    series: [{ type: 'line', name, data, sampling: 'lttb', showSymbol: false, connectNulls: false, smooth: false, lineStyle: { width: 2 } }],
+       return `${charts.value.coordinate === 'distance' ? `${(x / 1000).toFixed(2)} km` : elapsedClock(x)}<br>${y === null ? '–' : unit === 'min/km' ? formatPace(y) : `${y} ${unit}`}`
+     } },
+     xAxis: { type: 'value', name: charts.value.axisName, axisLabel: { formatter: (value: number) => charts.value.coordinate === 'distance' ? (value / 1000).toFixed(1) : elapsedClock(value) } },
+     yAxis: { type: 'value', name: unit, inverse, scale: true, axisLabel: { formatter: (value: number) => unit === 'min/km' ? paceAxis(value) : value } },
+     dataZoom: [{ type: 'inside', xAxisIndex: 0 }, { type: 'slider', xAxisIndex: 0, height: 16, bottom: 4 }],
+     series: [{ type: 'line', name, data, sampling: 'lttb', showSymbol: false, connectNulls: false, smooth: false, lineStyle: { width: 2 }, markArea: { silent: true, itemStyle: { color: 'rgba(59, 130, 246, 0.10)' }, data: intervalAreas.value.map(({ start, end, label }) => [{ name: label, xAxis: start }, { xAxis: end }]) } }],
   })
   return chart
 }

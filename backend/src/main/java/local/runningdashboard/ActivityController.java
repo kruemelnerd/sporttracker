@@ -42,7 +42,7 @@ public class ActivityController {
     ActivityDetail activity(@org.springframework.web.bind.annotation.PathVariable long id) {
         List<ActivityDetail> activities = jdbc.query(
                 "SELECT id, sport, sub_sport, start_time, elapsed_seconds, moving_seconds, distance_meters, average_speed_mps, average_heart_rate, maximum_heart_rate, average_cadence, ascent_meters, calories, garmin_activity_name, garmin_average_speed_mps, garmin_training_effect, garmin_anaerobic_training_effect, garmin_activity_training_load FROM activity WHERE id = ?",
-                (result, row) -> new ActivityDetail(new ActivitySummary(result.getLong("id"), result.getString("sport"), result.getString("sub_sport"), result.getTimestamp("start_time").toInstant(), result.getObject("elapsed_seconds", Double.class), result.getObject("distance_meters", Double.class), result.getObject("average_heart_rate", Integer.class), result.getObject("ascent_meters", Double.class)), result.getObject("moving_seconds", Double.class), result.getObject("average_speed_mps", Double.class), result.getObject("maximum_heart_rate", Integer.class), result.getObject("average_cadence", Integer.class), result.getObject("calories", Integer.class), new GarminTrainingMetrics(result.getObject("garmin_training_effect", Double.class), result.getObject("garmin_anaerobic_training_effect", Double.class), result.getObject("garmin_activity_training_load", Double.class)), new GarminActivityMetrics(result.getString("garmin_activity_name"), result.getObject("garmin_average_speed_mps", Double.class)), List.of(), List.of()), id);
+                (result, row) -> new ActivityDetail(new ActivitySummary(result.getLong("id"), result.getString("sport"), result.getString("sub_sport"), result.getTimestamp("start_time").toInstant(), result.getObject("elapsed_seconds", Double.class), result.getObject("distance_meters", Double.class), result.getObject("average_heart_rate", Integer.class), result.getObject("ascent_meters", Double.class)), result.getObject("moving_seconds", Double.class), result.getObject("average_speed_mps", Double.class), result.getObject("maximum_heart_rate", Integer.class), result.getObject("average_cadence", Integer.class), result.getObject("calories", Integer.class), new GarminTrainingMetrics(result.getObject("garmin_training_effect", Double.class), result.getObject("garmin_anaerobic_training_effect", Double.class), result.getObject("garmin_activity_training_load", Double.class)), new GarminActivityMetrics(result.getString("garmin_activity_name"), result.getObject("garmin_average_speed_mps", Double.class)), List.of(), List.of(), List.of(), List.of()), id);
         if (activities.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         ActivityDetail activity = activities.getFirst();
         List<ActivityRecord> records = records(id);
@@ -50,13 +50,36 @@ public class ActivityController {
             restoreMissingSeries(id, records);
             records = records(id);
         }
-        List<Lap> laps = jdbc.query("SELECT lap_number, duration_seconds, distance_meters, average_speed_mps, average_heart_rate, average_cadence, ascent_meters, descent_meters FROM lap WHERE activity_id = ? ORDER BY lap_number", (result, row) -> new Lap(result.getInt("lap_number"), result.getObject("duration_seconds", Double.class), result.getObject("distance_meters", Double.class), result.getObject("average_speed_mps", Double.class), result.getObject("average_heart_rate", Integer.class), result.getObject("average_cadence", Integer.class), result.getObject("ascent_meters", Double.class), result.getObject("descent_meters", Double.class)), id);
-        return new ActivityDetail(activity.activity(), activity.movingSeconds(), activity.averageSpeedMetersPerSecond(), activity.maximumHeartRate(), activity.averageCadence(), activity.calories(), activity.garminTrainingMetrics(), activity.garminActivityMetrics(), records, laps);
+        List<Lap> laps = jdbc.query("SELECT lap_number, duration_seconds, distance_meters, average_speed_mps, average_heart_rate, average_cadence, ascent_meters, descent_meters, workout_step_index, repetition_number, start_elapsed_seconds, end_elapsed_seconds, start_distance_meters, end_distance_meters FROM lap WHERE activity_id = ? ORDER BY lap_number",
+                (result, row) -> new Lap(result.getInt("lap_number"), result.getObject("duration_seconds", Double.class),
+                        result.getObject("distance_meters", Double.class), result.getObject("average_speed_mps", Double.class),
+                        result.getObject("average_heart_rate", Integer.class), result.getObject("average_cadence", Integer.class),
+                        result.getObject("ascent_meters", Double.class), result.getObject("descent_meters", Double.class),
+                        result.getObject("workout_step_index", Integer.class), result.getObject("repetition_number", Integer.class),
+                        result.getObject("start_elapsed_seconds", Double.class), result.getObject("end_elapsed_seconds", Double.class),
+                        result.getObject("start_distance_meters", Double.class), result.getObject("end_distance_meters", Double.class)), id);
+        List<WorkoutStep> workoutSteps = jdbc.query("SELECT step_index, step_name, duration_type, planned_duration_seconds, planned_distance_meters, repeat_from_step_index, repeat_count, intensity FROM activity_workout_step WHERE activity_id = ? ORDER BY step_index",
+                (result, row) -> new WorkoutStep(result.getInt("step_index"), result.getString("step_name"),
+                        result.getString("duration_type"), result.getObject("planned_duration_seconds", Double.class),
+                        result.getObject("planned_distance_meters", Double.class),
+                        result.getObject("repeat_from_step_index", Integer.class), result.getObject("repeat_count", Integer.class),
+                        result.getString("intensity")), id);
+        List<Pause> pauses = jdbc.query("SELECT start_elapsed_seconds, end_elapsed_seconds FROM activity_pause WHERE activity_id = ? ORDER BY pause_number",
+                (result, row) -> new Pause(result.getDouble("start_elapsed_seconds"), result.getDouble("end_elapsed_seconds")), id);
+        return new ActivityDetail(activity.activity(), activity.movingSeconds(), activity.averageSpeedMetersPerSecond(), activity.maximumHeartRate(), activity.averageCadence(), activity.calories(), activity.garminTrainingMetrics(), activity.garminActivityMetrics(), records, laps, workoutSteps, pauses);
     }
 
     private List<ActivityRecord> records(long activityId) {
-        return jdbc.query("SELECT elapsed_seconds, distance_meters, latitude, longitude, altitude_meters, speed_mps, heart_rate, cadence FROM activity_record WHERE activity_id = ? ORDER BY record_index",
-                (result, row) -> new ActivityRecord(result.getObject("elapsed_seconds", Double.class), result.getObject("distance_meters", Double.class), result.getObject("latitude", Double.class), result.getObject("longitude", Double.class), result.getObject("altitude_meters", Double.class), result.getObject("speed_mps", Double.class), result.getObject("heart_rate", Integer.class), result.getObject("cadence", Integer.class)), activityId);
+        return jdbc.query("SELECT elapsed_seconds, distance_meters, latitude, longitude, altitude_meters, speed_mps, heart_rate, cadence, step_length_m, vertical_oscillation_cm, vertical_ratio_percent, ground_contact_time_ms, ground_contact_balance_percent, temperature_celsius, power_watts FROM activity_record WHERE activity_id = ? ORDER BY record_index",
+                (result, row) -> new ActivityRecord(result.getObject("elapsed_seconds", Double.class),
+                        result.getObject("distance_meters", Double.class), result.getObject("latitude", Double.class),
+                        result.getObject("longitude", Double.class), result.getObject("altitude_meters", Double.class),
+                        result.getObject("speed_mps", Double.class), result.getObject("heart_rate", Integer.class),
+                        result.getObject("cadence", Integer.class), result.getObject("step_length_m", Double.class),
+                        result.getObject("vertical_oscillation_cm", Double.class), result.getObject("vertical_ratio_percent", Double.class),
+                        result.getObject("ground_contact_time_ms", Double.class),
+                        result.getObject("ground_contact_balance_percent", Double.class),
+                        result.getObject("temperature_celsius", Double.class), result.getObject("power_watts", Double.class)), activityId);
     }
 
     private void restoreMissingSeries(long activityId, List<ActivityRecord> persisted) {
@@ -73,12 +96,12 @@ public class ActivityController {
                 var source = decoded.get(index);
                 var stored = persisted.get(index);
                 if (!same(source.distanceMeters(), stored.distanceMeters()) || !same(source.elapsedSeconds(), stored.elapsedSeconds())) return;
-                if ((stored.altitudeMeters() == null && source.altitudeMeters() != null)
-                        || (stored.speedMetersPerSecond() == null && source.speedMetersPerSecond() != null)) {
-                    updates.add(new Object[] { source.altitudeMeters(), source.speedMetersPerSecond(), activityId, index });
-                }
+                updates.add(new Object[] { source.altitudeMeters(), source.speedMetersPerSecond(), source.stepLengthMeters(),
+                        source.verticalOscillationCentimeters(), source.verticalRatioPercent(),
+                        source.groundContactTimeMilliseconds(), source.groundContactBalancePercent(),
+                        source.temperatureCelsius(), source.powerWatts(), activityId, index });
             }
-            if (!updates.isEmpty()) jdbc.batchUpdate("UPDATE activity_record SET altitude_meters = COALESCE(altitude_meters, ?), speed_mps = COALESCE(speed_mps, ?) WHERE activity_id = ? AND record_index = ?", updates);
+            if (!updates.isEmpty()) jdbc.batchUpdate("UPDATE activity_record SET altitude_meters = COALESCE(altitude_meters, ?), speed_mps = COALESCE(speed_mps, ?), step_length_m = COALESCE(step_length_m, ?), vertical_oscillation_cm = COALESCE(vertical_oscillation_cm, ?), vertical_ratio_percent = COALESCE(vertical_ratio_percent, ?), ground_contact_time_ms = COALESCE(ground_contact_time_ms, ?), ground_contact_balance_percent = COALESCE(ground_contact_balance_percent, ?), temperature_celsius = COALESCE(temperature_celsius, ?), power_watts = COALESCE(power_watts, ?) WHERE activity_id = ? AND record_index = ?", updates);
         } catch (IOException ignored) {
             // Original FIT is optional; detail metrics remain available from persisted data.
         }
@@ -91,18 +114,28 @@ public class ActivityController {
     public record ActivitySummary(long id, String sport, String subSport, Instant startTime, Double elapsedSeconds,
                                   Double distanceMeters, Integer averageHeartRate, Double ascentMeters) { }
     public record ActivityRecord(Double elapsedSeconds, Double distanceMeters, Double latitude, Double longitude,
-                                 Double altitudeMeters, Double speedMetersPerSecond, Integer heartRate, Integer cadence) { }
+                                 Double altitudeMeters, Double speedMetersPerSecond, Integer heartRate, Integer cadence,
+                                 Double stepLengthMeters, Double verticalOscillationCentimeters,
+                                 Double verticalRatioPercent, Double groundContactTimeMilliseconds,
+                                 Double groundContactBalancePercent, Double temperatureCelsius, Double powerWatts) { }
     public record Lap(int lapNumber, Double durationSeconds, Double distanceMeters, Double averageSpeedMetersPerSecond,
-                      Integer averageHeartRate, Integer averageCadence, Double ascentMeters, Double descentMeters) { }
+                      Integer averageHeartRate, Integer averageCadence, Double ascentMeters, Double descentMeters,
+                      Integer workoutStepIndex, Integer repetitionNumber, Double startElapsedSeconds,
+                      Double endElapsedSeconds, Double startDistanceMeters, Double endDistanceMeters) { }
+    public record WorkoutStep(int stepIndex, String name, String durationType, Double plannedDurationSeconds,
+                              Double plannedDistanceMeters, Integer repeatFromStepIndex, Integer repeatCount,
+                              String intensity) { }
+    public record Pause(Double startElapsedSeconds, Double endElapsedSeconds) { }
     public record GarminTrainingMetrics(Double aerobicTrainingEffect, Double anaerobicTrainingEffect, Double trainingLoad) { }
     public record GarminActivityMetrics(String activityName, Double averageSpeedMetersPerSecond) { }
     public record ActivityDetail(ActivitySummary activity, Double movingSeconds, Double averageSpeedMetersPerSecond,
                                  Integer maximumHeartRate, Integer averageCadence, Integer calories, GarminTrainingMetrics garminTrainingMetrics,
-                                 GarminActivityMetrics garminActivityMetrics,
-                                 List<ActivityRecord> records, List<Lap> laps) {
+                                  GarminActivityMetrics garminActivityMetrics,
+                                  List<ActivityRecord> records, List<Lap> laps,
+                                  List<WorkoutStep> workoutSteps, List<Pause> pauses) {
         ActivityDetail(ActivitySummary activity, Double movingSeconds, Double averageSpeedMetersPerSecond,
                        Integer maximumHeartRate, Integer averageCadence, Integer calories) {
-            this(activity, movingSeconds, averageSpeedMetersPerSecond, maximumHeartRate, averageCadence, calories, null, null, List.of(), List.of());
+            this(activity, movingSeconds, averageSpeedMetersPerSecond, maximumHeartRate, averageCadence, calories, null, null, List.of(), List.of(), List.of(), List.of());
         }
     }
 }

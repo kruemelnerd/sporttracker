@@ -57,6 +57,26 @@ describe('Activity detail view', () => {
     expect(wrapper.find('table').exists()).toBe(true)
   })
 
+  it('shows linked workout phases and timer pauses separately from ordinary laps', async () => {
+    getActivity.mockResolvedValueOnce({
+      ...noData,
+      laps: [
+        { lapNumber: 1, distanceMeters: 400, durationSeconds: 120, averageSpeedMetersPerSecond: null, averageHeartRate: null, averageCadence: null, ascentMeters: null, descentMeters: null, workoutStepIndex: 1, repetitionNumber: 1, startElapsedSeconds: 0, endElapsedSeconds: 120, startDistanceMeters: 0, endDistanceMeters: 400 },
+        { lapNumber: 2, distanceMeters: 1000, durationSeconds: 300, averageSpeedMetersPerSecond: null, averageHeartRate: null, averageCadence: null, ascentMeters: null, descentMeters: null, workoutStepIndex: null, repetitionNumber: null, startElapsedSeconds: 120, endElapsedSeconds: 420, startDistanceMeters: 400, endDistanceMeters: 1400 },
+      ],
+      workoutSteps: [{ stepIndex: 1, name: 'Schnell', durationType: 'distance', plannedDurationSeconds: null, plannedDistanceMeters: 400, repeatFromStepIndex: null, repeatCount: null, intensity: 'active' }],
+      pauses: [{ startElapsedSeconds: 130, endElapsedSeconds: 145 }],
+    })
+    const wrapper = await mountDetail()
+
+    expect(wrapper.find('[data-testid="workout-intervals"]').text()).toContain('Schnell')
+    expect(wrapper.find('[data-testid="workout-intervals"]').text()).toContain('Wiederholung 1')
+    expect(wrapper.find('[data-testid="timer-pauses"]').text()).toContain('00:02:10')
+    expect(wrapper.find('[data-testid="timer-pauses"]').text()).toContain('00:02:25')
+    expect(wrapper.find('[data-testid="laps"]').text()).toContain('2')
+    expect(wrapper.find('[data-testid="laps"]').text()).not.toContain('Schnell')
+  })
+
   it('shows only available Garmin training metrics and hides the section when all are absent', async () => {
     let wrapper = await mountDetail()
     expect(wrapper.find('[data-testid="garmin-training-metrics"]').exists()).toBe(false)

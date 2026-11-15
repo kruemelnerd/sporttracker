@@ -53,6 +53,13 @@ export type ActivityRecord = {
   speedMetersPerSecond: number | null
   heartRate: number | null
   cadence: number | null
+  stepLengthMeters?: number | null
+  verticalOscillationCentimeters?: number | null
+  verticalRatioPercent?: number | null
+  groundContactTimeMilliseconds?: number | null
+  groundContactBalancePercent?: number | null
+  temperatureCelsius?: number | null
+  powerWatts?: number | null
 }
 
 export type Lap = {
@@ -64,6 +71,28 @@ export type Lap = {
   averageCadence: number | null
   ascentMeters: number | null
   descentMeters: number | null
+  workoutStepIndex?: number | null
+  repetitionNumber?: number | null
+  startElapsedSeconds?: number | null
+  endElapsedSeconds?: number | null
+  startDistanceMeters?: number | null
+  endDistanceMeters?: number | null
+}
+
+export type WorkoutStep = {
+  stepIndex: number
+  name: string | null
+  durationType: string | null
+  plannedDurationSeconds: number | null
+  plannedDistanceMeters: number | null
+  repeatFromStepIndex: number | null
+  repeatCount: number | null
+  intensity: string | null
+}
+
+export type ActivityPause = {
+  startElapsedSeconds: number
+  endElapsedSeconds: number
 }
 
 export type ActivityDetail = {
@@ -77,6 +106,8 @@ export type ActivityDetail = {
   garminActivityMetrics: GarminActivityMetrics
   records: ActivityRecord[]
   laps: Lap[]
+  workoutSteps?: WorkoutStep[]
+  pauses?: ActivityPause[]
 }
 
 export type GarminTrainingMetrics = {

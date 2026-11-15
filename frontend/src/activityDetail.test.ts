@@ -60,6 +60,18 @@ describe('activity detail formatting and chart preparation', () => {
     expect(rows.elevation).toEqual([[0, 10], [100, null], [200, 12]])
   })
 
+  it('prepares measured running-dynamics series on the same distance axis', () => {
+    const samples = [
+      { elapsedSeconds: 0, distanceMeters: 0, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: 2, heartRate: 140, cadence: 80, stepLengthMeters: 1.2, verticalOscillationCentimeters: 8, verticalRatioPercent: 7, groundContactTimeMilliseconds: 240, groundContactBalancePercent: 50, temperatureCelsius: 12, powerWatts: 250 },
+      { elapsedSeconds: 1, distanceMeters: 5, latitude: null, longitude: null, altitudeMeters: null, speedMetersPerSecond: 2, heartRate: 141, cadence: 81, stepLengthMeters: null, verticalOscillationCentimeters: 8.1, verticalRatioPercent: 7.1, groundContactTimeMilliseconds: 241, groundContactBalancePercent: 49.9, temperatureCelsius: null, powerWatts: null },
+    ]
+    const series = chartSeries(samples)
+    expect(series.stepLength).toEqual([[0, 1.2], [5, null]])
+    expect(series.verticalOscillation).toEqual([[0, 8], [5, 8.1]])
+    expect(series.groundContactTime).toEqual([[0, 240], [5, 241]])
+    expect(series.power).toEqual([[0, 250], [5, null]])
+  })
+
   it('derives pace from cumulative FIT distance and elapsed time when speed is unavailable', () => {
     const series = chartSeries([
       { elapsedSeconds: 0, distanceMeters: 0, latitude: null, longitude: null, altitudeMeters: 100, speedMetersPerSecond: null, heartRate: 140, cadence: 80 },
@@ -97,12 +109,13 @@ describe('activity detail formatting and chart preparation', () => {
   })
 
   it('reduces large series deterministically and retains endpoints and alignment', () => {
-    const records = Array.from({ length: 4000 }, (_, index) => ({ elapsedSeconds: index, distanceMeters: index, latitude: null, longitude: null, altitudeMeters: index, speedMetersPerSecond: 1, heartRate: index, cadence: index }))
+    const records = Array.from({ length: 4000 }, (_, index) => ({ elapsedSeconds: index, distanceMeters: index, latitude: null, longitude: null, altitudeMeters: index, speedMetersPerSecond: 1, heartRate: index, cadence: index, stepLengthMeters: index === 1 ? null : 1.2 }))
     const series = chartSeries(records)
     expect(series.pace.length).toBeLessThanOrEqual(1500)
     expect(series.pace[0][0]).toBe(0)
     expect(series.pace.at(-1)?.[0]).toBe(3999)
     expect(series.pace.map(([x]) => x)).toEqual(series.heartRate.map(([x]) => x))
+    expect(series.stepLength).toContainEqual([1, null])
   })
 
   it('prefers recorded laps and only derives kilometer splits when cumulative distance and time are complete', () => {
