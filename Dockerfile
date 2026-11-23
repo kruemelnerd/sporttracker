@@ -1,12 +1,12 @@
 # syntax=docker/dockerfile:1
-FROM node:26-bookworm@sha256:a546d3f8acd2af4382668a7e6acd3bc4418e6a27478373e3246f8162f5181509 AS frontend
+FROM node:26-bookworm@sha256:b7087bc4d973034b30854b378ba107f9fab622b47514cb7e2592e41b8bab8d49 AS frontend
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY frontend/ ./
 RUN npm run build
 
-FROM eclipse-temurin:25-jdk-noble@sha256:95e350ad1eb738f943e141640f7e3d797e483359a3b33c3864255bfd1ad71f8a AS backend
+FROM eclipse-temurin:25-jdk-noble@sha256:4ddc1a8bdaf283421df5487411aff10b797ccf1e06a339041005114c8f489b5c AS backend
 WORKDIR /workspace
 COPY . ./
 COPY --from=frontend /frontend/dist /frontend-build
@@ -17,7 +17,7 @@ RUN --mount=type=cache,target=/root/.gradle/caches \
     ./gradlew --no-daemon --max-workers=2 -PbuildCommit="$BUILD_COMMIT" -PfrontendBuildOutput=/frontend-build bootJar && \
     mkdir -p /healthcheck && javac -d /healthcheck /workspace/docker/healthcheck/Healthcheck.java
 
-FROM eclipse-temurin:25-jre-noble@sha256:a98128a57de944a72bd31fbc79b898edd5a5864d3652071d5bbd2160ab7d7dce AS runtime
+FROM eclipse-temurin:25-jre-noble@sha256:f3dd0838e69b881cc382237d5901e74ae3705b1056ad964b2e0e523b174fef99 AS runtime
 WORKDIR /app
 RUN sed -i 's|http://archive.ubuntu.com/|https://archive.ubuntu.com/|; s|http://security.ubuntu.com/|https://security.ubuntu.com/|' /etc/apt/sources.list.d/ubuntu.sources && \
     apt-get -o Acquire::Retries=0 update && \
